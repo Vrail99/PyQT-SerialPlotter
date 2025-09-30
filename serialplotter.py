@@ -54,6 +54,7 @@ class SerialPlotter(QWidget):
     aquisitionStopped = pyqtSignal(str)
     SampleLengthChanged = pyqtSignal(int)
     filesizeupdate = pyqtSignal(float)
+    SigPlotUpdated = pyqtSignal()
 
     Samples_per_second = time.time()
     samplecount = 0
@@ -81,7 +82,12 @@ class SerialPlotter(QWidget):
         self.plot_running = False
 
         self.maxplotlength = 1000
-        self.timestep = 39.0625e-3
+        #Data rate is 1 kHz
+        self.timestep = 1e-3
+
+        self.incomingDataScaling = 1/1000 # Incoming Data is in mbar
+        self.yscale = 0.75  # conversion factor to mmHg
+        self.yUnit = "mHg"  # Shown data unit
 
         self.sendCommands = False
         self.command = "VAL?"
@@ -100,13 +106,12 @@ class SerialPlotter(QWidget):
 
         self.initCanvas()
 
+        # self.setOutputToFile("output.csv")
+
         t = self.printstats(0)
         self.statlabel = pg.LabelItem(text=t)
         self.plotLayout.addItem(self.statlabel, row=0, col=0)
-        # self.livePlotItem.addItem(self.statlabel)
-        # vb = self.livePlotItem.getViewBox()
-        # self.statlabel.setParentItem(vb)
-        # self.statlabel.setPos(0.5, 0.5)
+
 
     def setOutputToFile(self, filename):
         """Outputs the data to a file"""
@@ -140,15 +145,19 @@ class SerialPlotter(QWidget):
     def toggleUnits(self, checked):
         #Default Units are in mbar
         if checked:
-            self.livePlotItem.getAxis('left').setLabel(text="Pressure", units='mHg')
+            self.yUnit = "mHg"
+            self.yscale = (1/1000)*0.750061683
+            self.livePlotItem.getAxis('left').setLabel(text="Amplitude", units=self.yUnit)
             # self.livePlotItem.getAxis('left').enableAutoSIPrefix(False)
-            self.livePlotItem.getAxis('left').setScale((1/1000)*0.750061683)
-            self.frequency_PlotItem.getAxis('left').setScale(1/1000*0.750061683)
+            self.livePlotItem.getAxis('left').setScale(self.yscale)
+            self.frequency_PlotItem.getAxis('left').setScale(self.yscale)
         else:
-            self.livePlotItem.getAxis('left').setLabel(text="Pressure", units='Bar')
+            self.yscale = 1/1000
+            self.yUnit = "Bar"
+            self.livePlotItem.getAxis('left').setLabel(text="Amplitude", units=self.yUnit)
             self.livePlotItem.getAxis('left').enableAutoSIPrefix(True)
-            self.livePlotItem.getAxis('left').setScale(1/1000)
-            self.frequency_PlotItem.getAxis('left').setScale(1/1000)
+            self.livePlotItem.getAxis('left').setScale(self.yscale)
+            self.frequency_PlotItem.getAxis('left').setScale(self.yscale)
 
     def setAxis(self, settings: dict, axis='left'):
         """Sets the axis settings for the plot"""
@@ -181,25 +190,23 @@ class SerialPlotter(QWidget):
                 self.datalines[i].setVisible(False)
 
         # Update statistics for the pressure line
-        self.datalines[1].sigPlotChanged.connect(self.displaySignalInfo)
+        # self.SigPlotUpdated.connect(self.displaySignalInfo)
         self.livePlotItem.getAxis('bottom').setScale(self.timestep)
-        self.livePlotItem.getAxis('left').setScale(0.75/1000)  # Incoming Data is in mbar
+        #Scale according to incoming data
+        self.livePlotItem.getAxis('left').setScale(self.yscale*self.incomingDataScaling)
         tickfont = pg.Qt.QtGui.QFont('Arial', 14)
         self.livePlotItem.getAxis('bottom').setStyle(tickFont=tickfont)
         self.livePlotItem.getAxis('left').setStyle(tickFont=tickfont)
         labelStyle = {'font-size': '14pt', 'color': '#FFF'}
         self.livePlotItem.getAxis('bottom').setLabel('Time', 's', **labelStyle)#, siPrefixEnableRanges((1e-12,1)))
-        self.livePlotItem.getAxis('left').setLabel('Pressure','mHg', **labelStyle)
+        self.livePlotItem.getAxis('left').setLabel('Amplitude', self.yUnit, **labelStyle)
         self.frequency_PlotItem.getAxis('bottom').setLabel('Frequency', 'Hz',**labelStyle)
-        self.frequency_PlotItem.getAxis('left').setLabel('FFT', 'Bar',**labelStyle)
+        self.frequency_PlotItem.getAxis('left').setLabel('FFT', self.yUnit,**labelStyle)
         self.frequency_PlotItem.getAxis('bottom').setStyle(tickFont=tickfont)
         self.frequency_PlotItem.getAxis('left').setStyle(tickFont=tickfont)
 
         self.frequency_PlotItem.showGrid(x=True)
         self.livePlotItem.showGrid(y=True)
-
-    # def displayPointInfo(self, evt):
-    #     print("list:", evt.pos())
 
     def getSerialDevice(self):
         return self.serialDevice
@@ -219,7 +226,7 @@ class SerialPlotter(QWidget):
         stattext = ""
         for idx, line in enumerate(self.datalines):
             if line.isVisible():
-                stattext += line.name() + ": " + self.printstats(idx) + "\t"
+                stattext += str(line.name()) + ": " + self.printstats(idx) + "\t"
 
         if self.samplecount > self.maxplotlength:
             deltatime = time.time() - self.Samples_per_second
@@ -229,7 +236,7 @@ class SerialPlotter(QWidget):
             self.Samples_per_second = time.time()
             self.samplecount = 0
 
-        stattext += str(self.SPS)
+        stattext += str(int(self.SPS)) + " Samples/s"
 
         self.statlabel.setText(stattext)
 
@@ -240,7 +247,7 @@ class SerialPlotter(QWidget):
         
         self.layout = QVBoxLayout()
         self.layout.addWidget(self.plotLayout)
-        self.layout.addWidget(self.line_select_widget)
+        #self.layout.addWidget(self.line_select_widget)
         
         self.start_stop_button = QPushButton("Start DAQ & Plot")
         self.start_stop_button.clicked.connect(self.toggle_plot)
@@ -299,9 +306,6 @@ class SerialPlotter(QWidget):
         
         self.setLayout(self.layout)
 
-    def test(self, event):
-        self.populate_ports()
-
     def isPlotting(self):
         return self.plot_running
     
@@ -334,8 +338,7 @@ class SerialPlotter(QWidget):
         for i in range(len(names)):
             if i < len(self.datalines):
                 self.activateLine(i, names[i])
-                #self.secondary_datalines[i].setName(names[i])
-                #self.checkboxes[i].setText(names[i])
+                self.datalines[i].setName(names[i])
             else:
                 break
 
@@ -354,17 +357,22 @@ class SerialPlotter(QWidget):
             line.setData(newX, newY)
             self.xData[idx] = newX
             self.yData[idx] = newY
-            
 
         self.SampleLengthChanged.emit(self.maxplotlength)
+
+    def changeLineName(self, line_index, new_name):
+        if line_index >= len(self.datalines) or line_index < 0:
+            raise ValueError("Index out of range")
+        self.datalines[line_index].name = new_name
+
+        self.livePlotItem.legend.removeItem(self.datalines[line_index])
+        self.livePlotItem.legend.addItem(self.datalines[line_index], new_name)
 
     def activateLine(self, line_index, label=None):
         if label is None:
             label = f"Line {line_index}"
         self.datalines[line_index].setData(self.datalines[line_index].getData()[1], name=label)
         self.datalines[line_index].setVisible(True)
-        #self.checkboxes[line_index].setChecked(True)
-        #self.checkboxes[line_index].setText(f"Line {line_index}") if label is None else self.checkboxes[line_index].setText(label)
 
         self.livePlotItem.legend.removeItem(self.datalines[line_index])
         self.livePlotItem.legend.addItem(self.datalines[line_index], label)
@@ -461,19 +469,23 @@ class SerialPlotter(QWidget):
                 line = self.serialDevice.readLine().decode()  # Use SerialDevice to read line
                 values = line.split(',')
                 for i, val in enumerate(values):
+                    if i >= self.maxNrLines:
+                        break
                     data_point = float(val)
                     self.yData[i] = np.roll(self.yData[i], 1)  # Roll data to the left
                     self.yData[i][0] = data_point  # Update the last value with new data
                 self.samplecount += 1
             except ValueError as e:
-                pass
-            except:
-                print("Some error occurred")
+                print("UPDATE_PLOT:", e)
+            except ConnectionError as e:
+                print("UPDATE_PLOT:", e)
 
 
         for i in range(self.maxNrLines):
             if self.datalines[i].isVisible():
                 self.datalines[i].setData(self.xData[i], self.yData[i])
+
+        self.displaySignalInfo(None)
         
 
     def update_file(self):
@@ -486,11 +498,14 @@ class SerialPlotter(QWidget):
                 for i, val in enumerate(values):
                     data_point = float(val)
                     stri += f",{data_point}"
+                    self.yData[i] = np.roll(self.yData[i], 1)  # Roll data to the left
+                    self.yData[i][0] = data_point  # Update the last value with new data
                 self.outfile.write(stri + "\n")
+                self.samplecount += 1
             except ValueError as e:
-                pass
-            except:
-                print("UPDATE_FILE: Some error occurred")
+                print("UPDATE_FILE:", e)
+            except ConnectionError as e:
+                print("UPDATE_FILE:", e)
                 
             filesize = self.outfile.tell()/(1024*1024)  # Get file size in MB
             # Emit signal once per MB of filesize
@@ -501,11 +516,17 @@ class SerialPlotter(QWidget):
                 self.filesizeupdate.emit(filesize)
                 self._last_emitted_mb = current_mb
 
+        for i in range(self.maxNrLines):
+            if self.datalines[i].isVisible():
+                self.datalines[i].setData(self.xData[i], self.yData[i])
+
+        self.displaySignalInfo(None)            
+
     def save_to_csv(self):
         filename, _ = QFileDialog.getSaveFileName(self, "Save to CSV", "", "CSV Files (*.csv)")
         if not filename:
             return
-        filename_sec = filename.replace(".csv", "_secondary.csv")
+        # filename_sec = filename.replace(".csv", "_secondary.csv")
         outdata = np.zeros((self.maxNrLines+1, self.maxplotlength))
         outdata_sec = np.zeros((self.maxNrLines+1, self.maxplotlength))
 
@@ -535,19 +556,13 @@ class SerialPlotter(QWidget):
         
         liveplotfilter = [line.isVisible() for line in self.datalines]
         liveplotfilter.insert(0, True)  # Include the time axis in the filter
-        secondaryplotfilter = [line.isVisible() for line in self.secondary_datalines]
-        secondaryplotfilter.insert(0, True)  # Include the time axis in the filter
+
         #Construct headers
-        header.append(str(self.livePlotItem.getAxis('bottom').labelText) + ' (ms)')
+        #Add time axis
+        header.append(str(self.livePlotItem.getAxis('bottom').labelText) + '[ms]')
         for i in range(self.maxNrLines):
             if self.datalines[i].isVisible():
                 header.append(self.datalines[i].name())
-
-
-        header_sec.append(str(self.frequency_PlotItem.getAxis('bottom').labelText) + ' (Hz)')
-        for i in range(self.maxNrLines):
-            if self.secondary_datalines[i].isVisible():
-                header_sec.append(self.secondary_datalines[i].name())
         
         #Write data to file
         with open(filename, 'w') as f:
@@ -558,15 +573,8 @@ class SerialPlotter(QWidget):
             for data in outdata[liveplotfilter, :].T:
                 f.write(";".join(map(lambda x: str(x).replace(".",","), data))+ "\n")
 
-        with open(filename_sec, 'w') as f:
-            f.write(";".join(header_sec) + "\n")
-
-            for data in outdata_sec[secondaryplotfilter, :].T:
-                f.write(";".join(map(lambda x: str(x).replace(".",","), data))+"\n")
 
     def clearPlot(self):
-        # self.livePlotItem.clear()
-        # self.frequency_PlotItem.clear()
         for line in range(self.maxNrLines):
             self.xData[line] = np.arange(self.maxplotlength)
             self.yData[line] = np.zeros(self.maxplotlength)
@@ -615,8 +623,6 @@ def main():
 
     # Plot the FFT (magnitude spectrum)
     #serial_plotter.plotData(np.abs(fft_result[:len(fft_result)//2]), xData=fft_freq[:len(fft_freq)//2], index=2, label="FFT Magnitude")
-
-
 
     #serial_plotter.setSecondXAxisTicks(fft_freq[:len(fft_freq)//2], index=2)
 
