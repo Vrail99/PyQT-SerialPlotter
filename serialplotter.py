@@ -421,7 +421,7 @@ class SerialPlotter(QWidget):
 
         if self.plotSettings["showFFT"]:
             freq, fft = self.calcFFT(yData, self.timestep)
-            self.plotSecondaryData(fft, freq, index, label=label)
+            self.plotSecondaryData(yData=fft, xData=freq, index=index, label=label)
 
     def plotSecondaryData(self, yData, xData=None, index=1, **kwargs):
         if index >= self.plotSettings["maxNrLines"] or index < 0:
@@ -438,7 +438,7 @@ class SerialPlotter(QWidget):
             self.secondary_xData[index] = xData
         else:
             self.secondary_datalines[index].setData(yData, name=label)
-        self.secondary_yData[index] = yData
+
 
         self.frequency_PlotItem.legend.removeItem(self.secondary_datalines[index])
         self.frequency_PlotItem.legend.addItem(self.secondary_datalines[index], label)
@@ -630,7 +630,6 @@ def main():
     window = QWidget()
     layout = QVBoxLayout(window)
     serial_plotter = SerialPlotter(None)
-#    serial_plotter.livePlotItem.getViewBox().enableAutoRange(True)
 
     serial_plotter.update_maxplotlength(1000)
 
