@@ -485,6 +485,21 @@ class SerialPlotter(QWidget):
             if self.datalines[i].isVisible():
                 self.datalines[i].setData(self.xData[i], self.yData[i])
 
+        # Calculate and plot FFT for each visible line
+        for i in range(self.maxNrLines):
+            if self.datalines[i].isVisible():
+                y = self.yData[i]
+                # Remove mean to avoid DC offset
+                y = y - np.mean(y)
+                fft_result = np.fft.fft(y)/len(y)
+                fft_freq = np.fft.fftfreq(len(y), d=self.timestep)
+                # Only plot the positive frequencies
+                pos_mask = fft_freq >= 0
+                self.secondary_datalines[i].setData(fft_freq[pos_mask], np.abs(fft_result[pos_mask]))
+                self.secondary_datalines[i].setVisible(True)
+            else:
+                self.secondary_datalines[i].setVisible(False)
+
         self.displaySignalInfo(None)
         
 
