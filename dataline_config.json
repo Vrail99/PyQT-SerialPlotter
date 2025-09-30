@@ -1,0 +1,29 @@
+{
+    "datalines": [
+        {
+            "name": "Time",
+            "index": 0,
+            "visible": true
+        },
+        {
+            "name": "HighPressure",
+            "index": 1,
+            "visible": true
+        },
+        {
+            "name": "DifferentialPressure",
+            "index": 2,
+            "visible": true
+        },
+        {
+            "name": "LowPressure",
+            "index": 3,
+            "visible": true
+        },
+        {
+            "name": "ValvePosition",
+            "index": 4,
+            "visible": true
+        }
+    ]
+}
