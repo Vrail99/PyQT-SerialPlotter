@@ -66,7 +66,19 @@ class SerialPlotter(QWidget):
         self.oldtime = time.time_ns()
         self.serialDevice = SerialDevice(baudrate=921600, timeout=1)
 
-        self.maxNrLines = 5
+        self.plotSettings = {
+            "showFFT": True,
+            "showPoints": False,
+            "showStats": True,
+            "showGrid": True,
+            "outfilename": "output.csv",
+            "streamToFile": False,
+            "maxNrLines": 5
+        }
+        self.plotStatus = {
+            "isPlotting": False
+        }
+
         self.datalines : list[pg.PlotDataItem] = []
         self.secondary_datalines : list[pg.PlotDataItem] = []
         self.xData : list[np.ndarray] = []
@@ -76,7 +88,6 @@ class SerialPlotter(QWidget):
 
         self.outfile = None
         self.outfilename = "output.csv"
-        self.streamToFile = False
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_plot)
         self.plot_running = False
@@ -116,7 +127,7 @@ class SerialPlotter(QWidget):
     def setOutputToFile(self, filename):
         """Outputs the data to a file"""
         self.outfile = open(filename, "w+")
-        self.streamToFile = True
+        self.plotSettings["streamToFile"] = True
         self.timer.timeout.disconnect()
         self.timer.timeout.connect(self.update_file)
 
@@ -126,12 +137,12 @@ class SerialPlotter(QWidget):
             self.outfile.flush()
             self.outfile.close()
         
-        self.streamToFile = False
+        self.plotSettings["streamToFile"] = False
         self.timer.timeout.disconnect()
         self.timer.timeout.connect(self.update_plot)
         
     def toggle_points(self, checked):
-        for i in range(self.maxNrLines):
+        for i in range(self.plotSettings["maxNrLines"]):
             self.datalines[i].setSymbol('o' if checked else None)
             self.secondary_datalines[i].setSymbol('o' if checked else None)
 
@@ -172,8 +183,7 @@ class SerialPlotter(QWidget):
 
 
     def initCanvas(self):
-        # self.livePlotItem.plotItem.addLegend()
-        for i in range(self.maxNrLines):  # Assuming there are at most 5 lines
+        for i in range(self.plotSettings["maxNrLines"]):  # Assuming there are at most 5 lines
             x = np.arange(self.maxplotlength)
             y = np.ones(self.maxplotlength)
             self.datalines.append(self.livePlotItem.plot(x, y*i, pen=(i, 5), width=1, name=f"Line {i}"))
@@ -190,7 +200,7 @@ class SerialPlotter(QWidget):
                 self.datalines[i].setVisible(False)
 
         # Update statistics for the pressure line
-        # self.SigPlotUpdated.connect(self.displaySignalInfo)
+
         self.livePlotItem.getAxis('bottom').setScale(self.timestep)
         #Scale according to incoming data
         self.livePlotItem.getAxis('left').setScale(self.yscale*self.incomingDataScaling)
@@ -200,8 +210,10 @@ class SerialPlotter(QWidget):
         labelStyle = {'font-size': '14pt', 'color': '#FFF'}
         self.livePlotItem.getAxis('bottom').setLabel('Time', 's', **labelStyle)#, siPrefixEnableRanges((1e-12,1)))
         self.livePlotItem.getAxis('left').setLabel('Amplitude', self.yUnit, **labelStyle)
+
         self.frequency_PlotItem.getAxis('bottom').setLabel('Frequency', 'Hz',**labelStyle)
         self.frequency_PlotItem.getAxis('left').setLabel('FFT', self.yUnit,**labelStyle)
+        self.frequency_PlotItem.getAxis('left').setScale(self.yscale*self.incomingDataScaling)
         self.frequency_PlotItem.getAxis('bottom').setStyle(tickFont=tickfont)
         self.frequency_PlotItem.getAxis('left').setStyle(tickFont=tickfont)
 
@@ -280,7 +292,7 @@ class SerialPlotter(QWidget):
         self.layout.addWidget(self.maxplotlen_input)
         self.checkboxes = []
 
-        # for i in range(self.maxNrLines):  # Assuming there are at most 5 lines
+        # for i in range(self.plotSettings["maxNrLines"]):  # Assuming there are at most 5 lines
         #     checkbox = QCheckBox(f'Line {i+1}')
         #     self.checkboxes.append(checkbox)
         #     checkbox.setChecked(False)
@@ -319,7 +331,7 @@ class SerialPlotter(QWidget):
             self.plot_running = True
             self.aquisitionStarted.emit("Started")
             self.timer.start(1)  # Update plot every ms
-            if self.streamToFile:
+            if self.plotSettings["streamToFile"]:
                 self.outfile = open(self.outfilename, "a+")
         else:
             self.start_stop_button.setText("Start DAQ & Plot")
@@ -327,7 +339,7 @@ class SerialPlotter(QWidget):
             self.serialDevice.flush()
             self.plot_running = False
             self.aquisitionStopped.emit("Stopped")
-            if self.streamToFile:
+            if self.plotSettings["streamToFile"]:
                 self.outfile.flush()
                 self.outfile.close()
 
@@ -364,6 +376,7 @@ class SerialPlotter(QWidget):
         if line_index >= len(self.datalines) or line_index < 0:
             raise ValueError("Index out of range")
         self.datalines[line_index].name = new_name
+        self.secondary_datalines[line_index].name = new_name
 
         self.livePlotItem.legend.removeItem(self.datalines[line_index])
         self.livePlotItem.legend.addItem(self.datalines[line_index], new_name)
@@ -391,11 +404,10 @@ class SerialPlotter(QWidget):
 
         label = f"Line {index}"
         if "label" in kwargs:
-            label = kwargs["label"]
+            label = str(kwargs["label"])
 
         self.datalines[index].setVisible(True)
-        #self.checkboxes[index].setChecked(True)
-        #self.checkboxes[index].setText(label)
+
         if xData is not None:
             self.datalines[index].setData(xData, yData, name=label)
             self.xData[index] = xData
@@ -407,8 +419,12 @@ class SerialPlotter(QWidget):
         self.livePlotItem.legend.removeItem(self.datalines[index])
         self.livePlotItem.legend.addItem(self.datalines[index], label)
 
+        if self.plotSettings["showFFT"]:
+            freq, fft = self.calcFFT(yData, self.timestep)
+            self.plotSecondaryData(fft, freq, index, label=label)
+
     def plotSecondaryData(self, yData, xData=None, index=1, **kwargs):
-        if index >= len(self.datalines) or index < 0:
+        if index >= self.plotSettings["maxNrLines"] or index < 0:
             raise ValueError("Index out of range")
         
         label = f"Line {index}"
@@ -458,7 +474,14 @@ class SerialPlotter(QWidget):
     def toggle_line(self, line_index, state):
         #selff.datalines[line_index].setVisible(self.checkboxes[line_index].isChecked())
         pass
-
+    
+    def calcFFT(self, y, timestep):
+        N = len(y)
+        fft_result = 2*np.abs(np.fft.fft(y)/N)
+        fft_freq = np.fft.fftfreq(N, d=timestep)
+        #Ignore DC component and negative frequencies
+        pos_mask = fft_freq > 0
+        return fft_result[pos_mask], fft_freq[pos_mask]
 
     def update_plot(self):
         if self.sendCommands:
@@ -469,7 +492,7 @@ class SerialPlotter(QWidget):
                 line = self.serialDevice.readLine().decode()  # Use SerialDevice to read line
                 values = line.split(',')
                 for i, val in enumerate(values):
-                    if i >= self.maxNrLines:
+                    if i >= self.plotSettings["maxNrLines"]:
                         break
                     data_point = float(val)
                     self.yData[i] = np.roll(self.yData[i], 1)  # Roll data to the left
@@ -481,28 +504,22 @@ class SerialPlotter(QWidget):
                 print("UPDATE_PLOT:", e)
 
 
-        for i in range(self.maxNrLines):
+        for i in range(self.plotSettings["maxNrLines"]):
             if self.datalines[i].isVisible():
                 self.datalines[i].setData(self.xData[i], self.yData[i])
 
         # Calculate and plot FFT for each visible line
-        for i in range(self.maxNrLines):
-            if self.datalines[i].isVisible():
-                y = self.yData[i]
-                # Remove mean to avoid DC offset
-                y = y - np.mean(y)
-                fft_result = np.fft.fft(y)/len(y)
-                fft_freq = np.fft.fftfreq(len(y), d=self.timestep)
-                # Only plot the positive frequencies
-                pos_mask = fft_freq >= 0
-                self.secondary_datalines[i].setData(fft_freq[pos_mask], np.abs(fft_result[pos_mask]))
-                self.secondary_datalines[i].setVisible(True)
-            else:
-                self.secondary_datalines[i].setVisible(False)
+        if self.plotSettings["showFFT"]:
+            for i in range(self.plotSettings["maxNrLines"]):
+                if self.datalines[i].isVisible():
+                    fft, freq = self.calcFFT(self.yData[i], self.timestep)
+                    self.secondary_datalines[i].setData(freq, fft)
+                    self.secondary_datalines[i].setVisible(True)
+                else:
+                    self.secondary_datalines[i].setVisible(False)
 
         self.displaySignalInfo(None)
         
-
     def update_file(self):
         while self.serialDevice.is_open and self.serialDevice.getInWaiting() > 0:
             try:
@@ -531,7 +548,7 @@ class SerialPlotter(QWidget):
                 self.filesizeupdate.emit(filesize)
                 self._last_emitted_mb = current_mb
 
-        for i in range(self.maxNrLines):
+        for i in range(self.plotSettings["maxNrLines"]):
             if self.datalines[i].isVisible():
                 self.datalines[i].setData(self.xData[i], self.yData[i])
 
@@ -542,16 +559,16 @@ class SerialPlotter(QWidget):
         if not filename:
             return
         # filename_sec = filename.replace(".csv", "_secondary.csv")
-        outdata = np.zeros((self.maxNrLines+1, self.maxplotlength))
-        outdata_sec = np.zeros((self.maxNrLines+1, self.maxplotlength))
+        outdata = np.zeros((self.plotSettings["maxNrLines"]+1, self.maxplotlength))
+        outdata_sec = np.zeros((self.plotSettings["maxNrLines"]+1, self.maxplotlength))
 
-        for i in range(self.maxNrLines):
+        for i in range(self.plotSettings["maxNrLines"]):
                 if self.datalines[i].isVisible():
                     x, y = self.datalines[i].getData()
                     outdata[i+1,:len(y)] = y
                     outdata[0,:len(x)] = x * self.timestep
 
-        for i in range(self.maxNrLines):
+        for i in range(self.plotSettings["maxNrLines"]):
             if self.secondary_datalines[i].isVisible():
                 x, y = self.secondary_datalines[i].getData()
                 outdata_sec[i+1,:len(y)] = y
@@ -575,7 +592,7 @@ class SerialPlotter(QWidget):
         #Construct headers
         #Add time axis
         header.append(str(self.livePlotItem.getAxis('bottom').labelText) + '[ms]')
-        for i in range(self.maxNrLines):
+        for i in range(self.plotSettings["maxNrLines"]):
             if self.datalines[i].isVisible():
                 header.append(self.datalines[i].name())
         
@@ -590,7 +607,7 @@ class SerialPlotter(QWidget):
 
 
     def clearPlot(self):
-        for line in range(self.maxNrLines):
+        for line in range(self.plotSettings["maxNrLines"]):
             self.xData[line] = np.arange(self.maxplotlength)
             self.yData[line] = np.zeros(self.maxplotlength)
             self.secondary_xData[line] = np.arange(self.maxplotlength)
@@ -631,15 +648,6 @@ def main():
 
     # Plot the combined wave
     serial_plotter.plotData(combined_wave, index=1, label="Combined Wave")
-
-    # Calculate FFT
-    fft_result = np.fft.fft(combined_wave)
-    fft_freq = np.fft.fftfreq(len(combined_wave), d=(t[1] - t[0]))
-
-    # Plot the FFT (magnitude spectrum)
-    #serial_plotter.plotData(np.abs(fft_result[:len(fft_result)//2]), xData=fft_freq[:len(fft_freq)//2], index=2, label="FFT Magnitude")
-
-    #serial_plotter.setSecondXAxisTicks(fft_freq[:len(fft_freq)//2], index=2)
 
     layout.addWidget(serial_plotter)
     window.setWindowTitle("Serial Plotter")
