@@ -70,12 +70,21 @@ class SerialPlotter(QWidget):
         self.oldtime = time.time_ns()
         self.serialDevice = SerialDevice(baudrate=921600, timeout=1)
 
+        # Read dataline names from JSON config
+        try:
+            with open("dataline_config.json", "r") as f:
+                config = json.load(f)
+                self.dataline_config = config.get("datalines", [])
+        except Exception as e:
+            print(f"Could not read dataline_config.json: {e}")
+            self.dataline_config = []
+
         self.plotSettings = {
             "show_FFT": True,
             "show_Points": False,
             "show_Stats": True,
             "show_Grid": True,
-            "Maximum_Number_of_Lines": 5,
+            "Maximum_Number_of_Lines": len(self.dataline_config),
             "filter_Differential": False
         }
         self.exportSettings = {
@@ -93,14 +102,7 @@ class SerialPlotter(QWidget):
         self.yData : list[np.ndarray] = []
         self.secondary_yData : list[np.ndarray] = []
 
-        # Read dataline names from JSON config
-        try:
-            with open("dataline_config.json", "r") as f:
-                config = json.load(f)
-                self.dataline_config = config.get("datalines", [])
-        except Exception as e:
-            print(f"Could not read dataline_config.json: {e}")
-            self.dataline_config = []
+        
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_plot)
@@ -122,11 +124,40 @@ class SerialPlotter(QWidget):
         
         plot_params = self.initChildren(self.plotSettings)
         export_params = self.initChildren(self.exportSettings)
+
+        # Add per-dataline statistics tracking parameters
+        self.stats = []
+        stats_params = []
+        for i, line_cfg in enumerate(self.dataline_config):
+            stat = {
+            "min": float('inf'),
+            "max": float('-inf'),
+            "mean": 0.0,
+            "std": 0.0,
+            }
+            self.stats.append(stat)
+            stats_params.append({
+            'name': line_cfg.get('name', f'Line {i}'),
+            'type': 'group',
+            'children': [
+                {'name': 'Min', 'type': 'float', 'value': stat["min"], 'readonly': True},
+                {'name': 'Max', 'type': 'float', 'value': stat["max"], 'readonly': True},
+                {'name': 'Mean', 'type': 'float', 'value': stat["mean"], 'readonly': True, 'decimals': 4},
+                {'name': 'Std', 'type': 'float', 'value': stat["std"], 'readonly': True, 'decimals': 4},
+            ]
+            })
+
+        params = [
+            {'name': "Plot parameter", 'type': 'group', 'children': plot_params},
+            {'name': "Export Settings", 'type': 'group', 'children': export_params},
+            {'name': "Statistics", 'type': 'group', 'children': stats_params}
+        ]
         
 
-        params = [{'name':"Plot parameter", 'type': 'group', 'children': plot_params},
-                    {'name':"Export Settings", 'type': 'group', 'children': export_params}
-                  ]
+        # params = [
+        #     {'name':"Plot parameter", 'type': 'group', 'children': plot_params},
+        #     {'name':"Export Settings", 'type': 'group', 'children': export_params}
+        #     ]
         
         self.params = Parameter.create(name='Parameters', type='group', children=params)
 
@@ -134,6 +165,7 @@ class SerialPlotter(QWidget):
 
         self.param_tree.setParameters(self.params, showTop=False)
 
+        
         self.init_ui()
         
 
@@ -146,11 +178,26 @@ class SerialPlotter(QWidget):
         self.frequency_PlotLegend = self.frequency_PlotItem.addLegend(offset=(0,1))
         self.frequency_PlotItem.setTitle("FFT")
 
-        self.initCanvas()
+        self.initCanvas()    
         
-        t = self.printstats(0)
-        self.statlabel = pg.LabelItem(text=t)
-        self.plotLayout.addItem(self.statlabel, row=0, col=0)
+        # t = self.printstats(0)
+        # self.statlabel = pg.LabelItem(text=t, wrapText=True)
+        # self.statlabel.setMaximumWidth(self.size().width())
+        # self.plotLayout.addItem(self.statlabel, row=0, col=0)
+
+    def update_statistics(self):
+        for i, stat in enumerate(self.stats):
+            y = self.yData[i]
+            stat["min"] = float(np.min(y))
+            stat["max"] = float(np.max(y))
+            stat["mean"] = float(np.mean(y))
+            stat["std"] = float(np.std(y))
+            stats_group = self.params.child("Statistics").children()[i]
+            stats_group.child('Min').setValue(stat["min"])
+            stats_group.child('Max').setValue(stat["max"])
+            stats_group.child('Mean').setValue(stat["mean"])
+            stats_group.child('Std').setValue(stat["std"])
+
 
     def initChildren(self, parameters:dict):
         
@@ -184,12 +231,20 @@ class SerialPlotter(QWidget):
                 self.plotSettings["show_FFT"] = data
                 if data == False:
                     self.clearSecondaryPlot()
+                else:
+                    for i in range(self.plotSettings["Maximum_Number_of_Lines"]):
+                        if self.datalines[i].isVisible():
+                            fft, freq = self.calcFFT(self.yData[i], self.timestep)
+                            self.secondary_datalines[i].setData(freq, fft)
+                            self.secondary_datalines[i].setVisible(True)
+                        else:
+                            self.secondary_datalines[i].setVisible(False)
             elif childName == 'Plot parameter.Show Points':
                 self.plotSettings["show_Points"] = data
                 self.toggle_points(data)
             elif childName == 'Plot parameter.Show Stats':
                 self.plotSettings["show_Stats"] = data
-                self.toggle_stats(data)
+                # self.toggle_stats(data)
             elif childName == 'Plot parameter.Show Grid':
                 self.plotSettings["show_Grid"] = data
                 self.toggle_grid(data)
@@ -199,6 +254,8 @@ class SerialPlotter(QWidget):
                 self.initCanvas()
             elif childName == 'Plot parameter.Filter Differential':
                 self.plotSettings["filter_Differential"] = data
+                self.yData[-1] = self.highpass_filter(self.yData[2], cutoff=0.3, fs=1000)
+                self.plotData(self.yData[-1], index=-1)
             elif childName == 'Export Settings.Outfilename':
                 self.exportSettings["outfilename"] = data
             elif childName == 'Stream To File':
@@ -271,9 +328,9 @@ class SerialPlotter(QWidget):
         for i in range(self.plotSettings["Maximum_Number_of_Lines"]):  # Assuming there are at most 5 lines
             x = np.arange(self.maxplotlength)
             y = np.ones(self.maxplotlength)
-            self.datalines.append(self.livePlotItem.plot(x, y*i, pen=(i, 5), width=1,
+            self.datalines.append(self.livePlotItem.plot(x, y, pen=(i, 5), width=1,
                                                          name=self.dataline_config[i].get('name', f"Line {i}")))
-            self.secondary_datalines.append(self.frequency_PlotItem.plot(x, y*i, pen=(i, 5), width=1,
+            self.secondary_datalines.append(self.frequency_PlotItem.plot(x, y, pen=(i, 5), width=1,
                                                                          name=self.dataline_config[i].get('name', f"Line {i}")))
             self.xData.append(x)
             self.yData.append(y)
@@ -295,7 +352,7 @@ class SerialPlotter(QWidget):
         self.livePlotItem.getAxis('bottom').setStyle(tickFont=tickfont)
         self.livePlotItem.getAxis('left').setStyle(tickFont=tickfont)
         labelStyle = {'font-size': '14pt', 'color': '#FFF'}
-        self.livePlotItem.getAxis('bottom').setLabel('Time', 's', **labelStyle)#, siPrefixEnableRanges((1e-12,1)))
+        self.livePlotItem.getAxis('bottom').setLabel('t', 's', **labelStyle)#, siPrefixEnableRanges((1e-12,1)))
         self.livePlotItem.getAxis('left').setLabel('Amplitude', self.yUnit, **labelStyle)
 
         self.frequency_PlotItem.getAxis('bottom').setLabel('Frequency', 'Hz',**labelStyle)
@@ -313,9 +370,6 @@ class SerialPlotter(QWidget):
     def printstats(self, index:int):
         avg = self.yData[index].mean()
         std = self.yData[index].std()
-        # min = self.yData[index].min()
-        # max = self.yData[index].max()
-        # median = np.median(self.yData[index])
         return f"Avg: {avg:.5f}\tStd: {std:.5f} (mBar)"
 
     def getAverage(self):
@@ -325,7 +379,7 @@ class SerialPlotter(QWidget):
         stattext = ""
         for idx, line in enumerate(self.datalines):
             if line.isVisible():
-                stattext += str(line.name()) + ": " + self.printstats(idx) + "\t"
+                stattext += str(line.name()) + ": " + self.printstats(idx) + "\n"
 
         if self.samplecount > self.maxplotlength:
             deltatime = time.time() - self.Samples_per_second
@@ -387,7 +441,7 @@ class SerialPlotter(QWidget):
         self.edit_pressure = QLineEdit(self.command)
         self.line_select_layout.addWidget(self.edit_pressure, 1, 1, 1, 3)
 
-        self.acceptButton = QPushButton("OK")
+        self.acceptButton = QPushButton("Send")
         self.acceptButton.clicked.connect(self.setSendCommand)
         self.line_select_layout.addWidget(self.acceptButton, 1, 4)
 
@@ -486,8 +540,11 @@ class SerialPlotter(QWidget):
         self.livePlotItem.getAxis('bottom').setScale(self.timestep)
 
     def plotData(self, yData, /, xData=None, index=0, **kwargs):
-        if index >= len(self.datalines) or index < 0:
-            raise ValueError("Index out of range")
+        try:
+            self.datalines[index]
+        except IndexError:
+            print("Index out of range")
+            return
 
         label = f"Line {index}"
         if "label" in kwargs:
@@ -511,8 +568,11 @@ class SerialPlotter(QWidget):
             self.plotSecondaryData(yData=fft, xData=freq, index=index, label=label)
 
     def plotSecondaryData(self, yData, xData=None, index=1, **kwargs):
-        if index >= self.plotSettings["Maximum_Number_of_Lines"] or index < 0:
-            raise ValueError("Index out of range")
+        try:
+            self.datalines[index]
+        except IndexError:
+            print("Index out of range")
+            return
         
         label = f"Line {index}"
         if "label" in kwargs:
@@ -553,10 +613,8 @@ class SerialPlotter(QWidget):
             return
 
     def setSendCommand(self):
-        self.command = self.edit_pressure.text()
-        self.label_pressure.setText(f"Command: {self.command}")
-        self.sendCommands = not self.sendCommands
-        self.acceptButton.setText("Stop Sending" if self.sendCommands else "OK")
+        self.command = self.edit_pressure.text() + '\n'
+        self.serialDevice.write(self.command.encode("utf-8"))  # Use SerialDevice to send command
 
     def toggle_line(self, line_index, state):
         #selff.datalines[line_index].setVisible(self.checkboxes[line_index].isChecked())
@@ -611,8 +669,9 @@ class SerialPlotter(QWidget):
                     if i >= self.plotSettings["Maximum_Number_of_Lines"]:
                         break
                     data_point = float(val)
-                    self.yData[i] = np.roll(self.yData[i], 1)  # Roll data to the left
-                    self.yData[i][0] = data_point  # Update the last value with new data
+                    
+                    self.yData[i] = np.roll(self.yData[i], -1)  # Roll data to the left
+                    self.yData[i][-1] = data_point  # Update the last value with new data
                 self.samplecount += 1
             except ValueError as e:
                 print("UPDATE_PLOT:", e)
@@ -620,7 +679,7 @@ class SerialPlotter(QWidget):
                 print("UPDATE_PLOT:", e)
 
         if self.plotSettings["filter_Differential"]:
-           self.yData[4] = self.highpass_filter(self.yData[2], cutoff=0.3, fs=1000)
+           self.yData[-1] = self.highpass_filter(self.yData[2], cutoff=0.3, fs=1000)
 
         for i in range(self.plotSettings["Maximum_Number_of_Lines"]):
             if self.datalines[i].isVisible():
@@ -636,7 +695,8 @@ class SerialPlotter(QWidget):
                 else:
                     self.secondary_datalines[i].setVisible(False)
 
-        self.displaySignalInfo(None)
+        if self.plotSettings["show_Stats"]:
+            self.update_statistics()
         
     def update_file(self):
         while self.serialDevice.is_open and self.serialDevice.getInWaiting() > 0:
@@ -648,8 +708,8 @@ class SerialPlotter(QWidget):
                 for i, val in enumerate(values):
                     data_point = float(val)
                     stri += f",{data_point}"
-                    self.yData[i] = np.roll(self.yData[i], 1)  # Roll data to the left
-                    self.yData[i][0] = data_point  # Update the last value with new data
+                    self.yData[i] = np.roll(self.yData[i], -1)  # Roll data to the left
+                    self.yData[i][-1] = data_point  # Update the last value with new data
                 self.outfile.write(stri + "\n")
                 self.samplecount += 1
             except ValueError as e:
@@ -727,7 +787,7 @@ class SerialPlotter(QWidget):
     def clearPlot(self):
         for line in range(self.plotSettings["Maximum_Number_of_Lines"]):
             self.xData[line] = np.arange(self.maxplotlength)
-            self.yData[line] = np.zeros(self.maxplotlength)
+            self.yData[line] = np.zeros(self.maxplotlength)*0.01
             self.datalines[line].setData(self.xData[line], self.yData[line])
 
         self.clearSecondaryPlot()

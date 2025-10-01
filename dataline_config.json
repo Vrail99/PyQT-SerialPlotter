@@ -1,28 +1,33 @@
 {
     "datalines": [
         {
-            "name": "Time",
+            "name": "Ist",
             "index": 0,
             "visible": true
         },
         {
-            "name": "HighPressure",
+            "name": "Soll",
             "index": 1,
             "visible": true
         },
         {
-            "name": "DifferentialPressure",
+            "name": "Referenz",
             "index": 2,
             "visible": true
         },
         {
-            "name": "LowPressure",
+            "name": "Ventil",
             "index": 3,
             "visible": true
         },
         {
-            "name": "ValvePosition",
+            "name": "Ventil Manschette",
             "index": 4,
+            "visible": true
+        },
+        {
+            "name": "Filtered Differential Pressure",
+            "index": 5,
             "visible": true
         }
     ]
