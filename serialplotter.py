@@ -122,10 +122,57 @@ class SerialPlotter(QWidget):
         self.plotLayout = pg.GraphicsLayoutWidget(border='w')
         self.param_tree = ParameterTree()
         
-        plot_params = self.initChildren(self.plotSettings)
-        export_params = self.initChildren(self.exportSettings)
+        # Load parameter configuration from JSON file
+        self.loadParameterConfig()
+        
+        
+
+        
+        self.init_ui()
+        
+
+        self.livePlotItem = self.plotLayout.addPlot(title="Live Data", row=1, col=0)
+        self.livePlotLegend = self.livePlotItem.addLegend(offset=(0,1))
+        self.livePlotItem.setTitle("Live Data")
+        
+        
+        self.frequency_PlotItem = self.plotLayout.addPlot(title="FFT", row=2, col=0)
+        self.frequency_PlotLegend = self.frequency_PlotItem.addLegend(offset=(0,1))
+        self.frequency_PlotItem.setTitle("FFT")
+
+        self.initCanvas()
+
+    def update_statistics(self):
+        for i, stat in enumerate(self.stats):
+            if i >= len(self.yData):
+                continue
+            y = self.yData[i]
+            stat["min"] = float(np.min(y))
+            stat["max"] = float(np.max(y))
+            stat["mean"] = float(np.mean(y))
+            stat["std"] = float(np.std(y))
+            stats_group = self.params.child("Statistics").children()[i]
+            stats_group.child('Min').setValue(stat["min"])
+            stats_group.child('Max').setValue(stat["max"])
+            stats_group.child('Mean').setValue(stat["mean"])
+            stats_group.child('Std').setValue(stat["std"])
+
+    def loadParameterConfig(self):
+        """Load parameter tree configuration from JSON file"""
+        try:
+            with open("parameter_config.json", "r") as f:
+                config = json.load(f)
+                self.parameter_config = config.get("parameters", [])
+                
+                # Update internal settings with values from config
+                self.updateSettingsFromConfig()
+        except Exception as e:
+            print(f"Could not read parameter_config.json: {e}")
+            # Fallback to default configuration
+            self.parameter_config = []
 
         # Add per-dataline statistics tracking parameters
+
         self.stats = []
         stats_params = []
         for i, line_cfg in enumerate(self.dataline_config):
@@ -147,60 +194,43 @@ class SerialPlotter(QWidget):
             ]
             })
 
-        params = [
-            {'name': "Plot parameter", 'type': 'group', 'children': plot_params},
-            {'name': "Export Settings", 'type': 'group', 'children': export_params},
-            {'name': "Statistics", 'type': 'group', 'children': stats_params}
-        ]
+        # Combine loaded parameters with statistics
+        all_params = self.parameter_config + [{'name': "Statistics", 'type': 'group', 'children': stats_params}]
         
-
-        # params = [
-        #     {'name':"Plot parameter", 'type': 'group', 'children': plot_params},
-        #     {'name':"Export Settings", 'type': 'group', 'children': export_params}
-        #     ]
-        
-        self.params = Parameter.create(name='Parameters', type='group', children=params)
-
+        self.params = Parameter.create(name='Parameters', type='group', children=all_params)        
         self.params.sigTreeStateChanged.connect(self.on_param_change)
 
         self.param_tree.setParameters(self.params, showTop=False)
-
-        
-        self.init_ui()
-        
-
-        self.livePlotItem = self.plotLayout.addPlot(title="Live Data", row=1, col=0)
-        self.livePlotLegend = self.livePlotItem.addLegend(offset=(0,1))
-        self.livePlotItem.setTitle("Live Data")
-        
-        
-        self.frequency_PlotItem = self.plotLayout.addPlot(title="FFT", row=2, col=0)
-        self.frequency_PlotLegend = self.frequency_PlotItem.addLegend(offset=(0,1))
-        self.frequency_PlotItem.setTitle("FFT")
-
-        self.initCanvas()    
-        
-        # t = self.printstats(0)
-        # self.statlabel = pg.LabelItem(text=t, wrapText=True)
-        # self.statlabel.setMaximumWidth(self.size().width())
-        # self.plotLayout.addItem(self.statlabel, row=0, col=0)
-
-    def update_statistics(self):
-        for i, stat in enumerate(self.stats):
-            y = self.yData[i]
-            stat["min"] = float(np.min(y))
-            stat["max"] = float(np.max(y))
-            stat["mean"] = float(np.mean(y))
-            stat["std"] = float(np.std(y))
-            stats_group = self.params.child("Statistics").children()[i]
-            stats_group.child('Min').setValue(stat["min"])
-            stats_group.child('Max').setValue(stat["max"])
-            stats_group.child('Mean').setValue(stat["mean"])
-            stats_group.child('Std').setValue(stat["std"])
-
+            
+    def updateSettingsFromConfig(self):
+        """Update internal settings dictionaries with values from parameter config"""
+        for group in self.parameter_config:
+            if group["name"] == "Plot parameter":
+                for child in group["children"]:
+                    name = child["name"]
+                    value = child["value"]
+                    if name == "Show Fft":
+                        self.plotSettings["show_FFT"] = value
+                    elif name == "Show Points":
+                        self.plotSettings["show_Points"] = value
+                    elif name == "Show Stats":
+                        self.plotSettings["show_Stats"] = value
+                    elif name == "Show Grid":
+                        self.plotSettings["show_Grid"] = value
+                    elif name == "Maximum Number Of Lines":
+                        self.plotSettings["Maximum_Number_of_Lines"] = value
+                    elif name == "Filter Differential":
+                        self.plotSettings["filter_Differential"] = value
+            elif group["name"] == "Export Settings":
+                for child in group["children"]:
+                    name = child["name"]
+                    value = child["value"]
+                    if name == "Output Filename":
+                        self.exportSettings["output_Filename"] = value
+                    elif name == "Stream To File":
+                        self.exportSettings["stream_To_File"] = value
 
     def initChildren(self, parameters:dict):
-        
         # Dynamically create children from self.plotSettings
         _children = []
         for key, value in parameters.items():
@@ -219,7 +249,6 @@ class SerialPlotter(QWidget):
         return _children
 
     def on_param_change(self, param, changes):
-
         for param_, change, data in changes:
             path = self.params.childPath(param_)
             if path is not None:
@@ -239,6 +268,7 @@ class SerialPlotter(QWidget):
                             self.secondary_datalines[i].setVisible(True)
                         else:
                             self.secondary_datalines[i].setVisible(False)
+
             elif childName == 'Plot parameter.Show Points':
                 self.plotSettings["show_Points"] = data
                 self.toggle_points(data)
@@ -248,7 +278,7 @@ class SerialPlotter(QWidget):
             elif childName == 'Plot parameter.Show Grid':
                 self.plotSettings["show_Grid"] = data
                 self.toggle_grid(data)
-            elif childName == 'Plot parameter.Max Number of Lines':
+            elif childName == 'Plot parameter.Maximum Number Of Lines':
                 self.plotSettings["Maximum_Number_of_Lines"] = data
                 # Optionally, reinitialize canvas or update UI
                 self.initCanvas()
@@ -256,12 +286,12 @@ class SerialPlotter(QWidget):
                 self.plotSettings["filter_Differential"] = data
                 self.yData[-1] = self.highpass_filter(self.yData[2], cutoff=0.3, fs=1000)
                 self.plotData(self.yData[-1], index=-1)
-            elif childName == 'Export Settings.Outfilename':
-                self.exportSettings["outfilename"] = data
-            elif childName == 'Stream To File':
-                self.exportSettings["Export Settings.Stream To File"] = data
+            elif childName == 'Export Settings.Output Filename':
+                self.exportSettings["output_Filename"] = data
+            elif childName == 'Export Settings.Stream To File':
+                self.exportSettings["stream_To_File"] = data
                 if data:
-                    self.setOutputToFile(self.exportSettings["outfilename"])
+                    self.setOutputToFile(self.exportSettings["output_Filename"])
                 else:
                     self.setOutputToPlot()
 
@@ -325,6 +355,13 @@ class SerialPlotter(QWidget):
 
 
     def initCanvas(self):
+        self.datalines = []
+        self.secondary_datalines  = []
+        self.xData = []
+        self.secondary_xData = []
+        self.yData = []
+        self.secondary_yData = []
+
         for i in range(self.plotSettings["Maximum_Number_of_Lines"]):  # Assuming there are at most 5 lines
             x = np.arange(self.maxplotlength)
             y = np.ones(self.maxplotlength)
@@ -352,7 +389,7 @@ class SerialPlotter(QWidget):
         self.livePlotItem.getAxis('bottom').setStyle(tickFont=tickfont)
         self.livePlotItem.getAxis('left').setStyle(tickFont=tickfont)
         labelStyle = {'font-size': '14pt', 'color': '#FFF'}
-        self.livePlotItem.getAxis('bottom').setLabel('t', 's', **labelStyle)#, siPrefixEnableRanges((1e-12,1)))
+        self.livePlotItem.getAxis('bottom').setLabel('Time', 's', **labelStyle)#, siPrefixEnableRanges((1e-12,1)))
         self.livePlotItem.getAxis('left').setLabel('Amplitude', self.yUnit, **labelStyle)
 
         self.frequency_PlotItem.getAxis('bottom').setLabel('Frequency', 'Hz',**labelStyle)
@@ -361,8 +398,20 @@ class SerialPlotter(QWidget):
         self.frequency_PlotItem.getAxis('bottom').setStyle(tickFont=tickfont)
         self.frequency_PlotItem.getAxis('left').setStyle(tickFont=tickfont)
 
-        self.frequency_PlotItem.showGrid(x=True)
-        self.livePlotItem.showGrid(y=True)
+        self.frequency_PlotItem.showGrid(x=self.plotSettings["show_Grid"])
+        self.livePlotItem.showGrid(y=self.plotSettings["show_Grid"])
+
+        self.updateLegend()
+
+    def updateLegend(self):
+        self.livePlotItem.legend.clear()
+        for line in self.datalines:
+            if line.isVisible():
+                self.livePlotItem.legend.addItem(line, line.name())
+        self.frequency_PlotItem.legend.clear()
+        for line in self.secondary_datalines:
+            if line.isVisible():
+                self.frequency_PlotItem.legend.addItem(line, line.name())
 
     def getSerialDevice(self):
         return self.serialDevice
@@ -785,12 +834,11 @@ class SerialPlotter(QWidget):
 
 
     def clearPlot(self):
-        for line in range(self.plotSettings["Maximum_Number_of_Lines"]):
-            self.xData[line] = np.arange(self.maxplotlength)
-            self.yData[line] = np.zeros(self.maxplotlength)*0.01
-            self.datalines[line].setData(self.xData[line], self.yData[line])
+        self.livePlotItem.clear()
+        self.frequency_PlotItem.clear()
+        self.initCanvas()
 
-        self.clearSecondaryPlot()
+        # self.clearSecondaryPlot()
     
     def clearSecondaryPlot(self):
         for line in range(self.plotSettings["Maximum_Number_of_Lines"]):

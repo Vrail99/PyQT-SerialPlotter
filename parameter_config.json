@@ -1,0 +1,57 @@
+{
+    "parameters": [
+        {
+            "name": "Plot parameter",
+            "type": "group",
+            "children": [
+                {
+                    "name": "Show Fft",
+                    "type": "bool",
+                    "value": true
+                },
+                {
+                    "name": "Show Points",
+                    "type": "bool",
+                    "value": false
+                },
+                {
+                    "name": "Show Stats",
+                    "type": "bool",
+                    "value": true
+                },
+                {
+                    "name": "Show Grid",
+                    "type": "bool",
+                    "value": true
+                },
+                {
+                    "name": "Maximum Number Of Lines",
+                    "type": "int",
+                    "value": 5,
+                    "limits": [1, 10]
+                },
+                {
+                    "name": "Filter Differential",
+                    "type": "bool",
+                    "value": false
+                }
+            ]
+        },
+        {
+            "name": "Export Settings",
+            "type": "group",
+            "children": [
+                {
+                    "name": "Output Filename",
+                    "type": "str",
+                    "value": "output.csv"
+                },
+                {
+                    "name": "Stream To File",
+                    "type": "bool",
+                    "value": false
+                }
+            ]
+        }
+    ]
+}
