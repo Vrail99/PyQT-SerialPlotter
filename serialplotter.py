@@ -258,9 +258,7 @@ class SerialPlotter(QWidget):
 
             if childName == 'Plot parameter.Show Fft':
                 self.plotSettings["show_FFT"] = data
-                if data == False:
-                    self.clearSecondaryPlot()
-                else:
+                if data:
                     for i in range(self.plotSettings["Maximum_Number_of_Lines"]):
                         if self.datalines[i].isVisible():
                             fft, freq = self.calcFFT(self.yData[i], self.timestep)
@@ -317,9 +315,6 @@ class SerialPlotter(QWidget):
         for i in range(self.plotSettings["Maximum_Number_of_Lines"]):
             self.datalines[i].setSymbol('o' if checked else None)
             self.secondary_datalines[i].setSymbol('o' if checked else None)
-
-    def toggle_stats(self, checked):
-        self.statlabel.setVisible(checked)
 
     def toggle_grid(self, checked):
         self.livePlotItem.showGrid(y=checked)
@@ -424,24 +419,6 @@ class SerialPlotter(QWidget):
     def getAverage(self):
         return float(self.yData[1].mean())
 
-    def displaySignalInfo(self, evt):
-        stattext = ""
-        for idx, line in enumerate(self.datalines):
-            if line.isVisible():
-                stattext += str(line.name()) + ": " + self.printstats(idx) + "\n"
-
-        if self.samplecount > self.maxplotlength:
-            deltatime = time.time() - self.Samples_per_second
-            if deltatime > 0:
-                self.SPS = self.samplecount / deltatime
-
-            self.Samples_per_second = time.time()
-            self.samplecount = 0
-
-        stattext += str(int(self.SPS)) + " Samples/s"
-
-        self.statlabel.setText(stattext)
-
     def init_ui(self):
         self.line_select_layout = QGridLayout()
         self.line_select_widget = QWidget()
@@ -449,9 +426,9 @@ class SerialPlotter(QWidget):
         
         self.widgetlayout = QHBoxLayout()
 
-        self.layout = QVBoxLayout()
-        self.layout.addWidget(self.plotLayout)
-        self.layout.addWidget(self.line_select_widget)
+        self.vlayout = QVBoxLayout()
+        self.vlayout.addWidget(self.plotLayout)
+        self.vlayout.addWidget(self.line_select_widget)
         
         self.start_stop_button = QPushButton("Start DAQ & Plot")
         self.start_stop_button.clicked.connect(self.toggle_plot)
@@ -473,15 +450,15 @@ class SerialPlotter(QWidget):
         self.serialDevice_layout.addWidget(self.port_dropdown)
         self.serialDevice_layout.addWidget(self.serialDevice_Baudrate)
         
-        self.layout.addLayout(self.serialDevice_layout)
+        self.vlayout.addLayout(self.serialDevice_layout)
 
         self.maxplotlen_label = QLabel("Max Plot Length:")
         self.maxplotlen_input = QLineEdit(str(self.maxplotlength))
         self.maxplotlen_input.setValidator(QIntValidator(1, 100000))
         self.maxplotlen_input.editingFinished.connect(self.update_maxplotlength)
         
-        self.layout.addWidget(self.maxplotlen_label)
-        self.layout.addWidget(self.maxplotlen_input)
+        self.vlayout.addWidget(self.maxplotlen_label)
+        self.vlayout.addWidget(self.maxplotlen_input)
         self.checkboxes = []
         
         # self.label_pressure = QLabel(f"Command: {self.command}")
@@ -491,26 +468,25 @@ class SerialPlotter(QWidget):
         self.line_select_layout.addWidget(self.edit_pressure, 1, 1, 1, 3)
 
         self.acceptButton = QPushButton("Send")
-        self.acceptButton.clicked.connect(self.setSendCommand)
+        self.acceptButton.clicked.connect(self.sendCommand)
         self.line_select_layout.addWidget(self.acceptButton, 1, 4)
 
         self.clearButton = QPushButton("Clear Plot Data")
         self.clearButton.clicked.connect(self.clearPlot)
         self.line_select_layout.addWidget(self.clearButton, 1, 5)
         
-        self.layout.addWidget(self.start_stop_button)
-        self.layout.addWidget(self.save_button)
+        self.vlayout.addWidget(self.start_stop_button)
+        self.vlayout.addWidget(self.save_button)
 
         self.widgetlayout.addWidget(self.param_tree, stretch=1)
-        self.widgetlayout.addLayout(self.layout, stretch=4)
+        self.widgetlayout.addLayout(self.vlayout, stretch=4)
         
         self.setLayout(self.widgetlayout)
 
 
+    def sendCommand(self):
+        self.serialDevice.write(str(self.edit_pressure.text()).encode('utf-8') + b'\n')
 
-    def is_Plotting(self):
-        return self.plot_running
-    
     @pyqtSlot()
     def toggle_plot(self):
         if not self.plot_running:
@@ -535,14 +511,6 @@ class SerialPlotter(QWidget):
 
     def getMaxPlotLength(self):
         return self.maxplotlength
-    
-    def setLineNames(self, names:list[str]):
-        for i in range(len(names)):
-            if i < len(self.datalines):
-                self.activateLine(i, names[i])
-                self.datalines[i].setName(names[i])
-            else:
-                break
 
     @pyqtSlot()
     def update_maxplotlength(self, length=None):
@@ -660,14 +628,6 @@ class SerialPlotter(QWidget):
         except Exception as e:
             QMessageBox.warning(self, "Error", str(e))
             return
-
-    def setSendCommand(self):
-        self.command = self.edit_pressure.text() + '\n'
-        self.serialDevice.write(self.command.encode("utf-8"))  # Use SerialDevice to send command
-
-    def toggle_line(self, line_index, state):
-        #selff.datalines[line_index].setVisible(self.checkboxes[line_index].isChecked())
-        pass
     
     def calcFFT(self, y, timestep):
         N = len(y)
@@ -777,9 +737,7 @@ class SerialPlotter(QWidget):
 
         for i in range(self.plotSettings["Maximum_Number_of_Lines"]):
             if self.datalines[i].isVisible():
-                self.datalines[i].setData(self.xData[i], self.yData[i])
-
-        self.displaySignalInfo(None)            
+                self.datalines[i].setData(self.xData[i], self.yData[i])     
 
     def save_to_csv(self):
         filename, _ = QFileDialog.getSaveFileName(self, "Save to CSV", "", "CSV Files (*.csv)")
@@ -792,12 +750,16 @@ class SerialPlotter(QWidget):
         for i in range(self.plotSettings["Maximum_Number_of_Lines"]):
                 if self.datalines[i].isVisible():
                     x, y = self.datalines[i].getData()
+                    if x == None or y == None:
+                        return
                     outdata[i+1,:len(y)] = y
                     outdata[0,:len(x)] = x * self.timestep
 
         for i in range(self.plotSettings["Maximum_Number_of_Lines"]):
             if self.secondary_datalines[i].isVisible():
                 x, y = self.secondary_datalines[i].getData()
+                if x == None or y == None:
+                        return
                 outdata_sec[i+1,:len(y)] = y
                 outdata_sec[0,:len(x)] = x * self.timestep
 
@@ -837,17 +799,6 @@ class SerialPlotter(QWidget):
         self.livePlotItem.clear()
         self.frequency_PlotItem.clear()
         self.initCanvas()
-
-        # self.clearSecondaryPlot()
-    
-    def clearSecondaryPlot(self):
-        for line in range(self.plotSettings["Maximum_Number_of_Lines"]):
-            self.secondary_xData[line] = np.arange(self.maxplotlength)
-            self.secondary_yData[line] = np.zeros(self.maxplotlength)
-            self.secondary_datalines[line].setData(self.secondary_xData[line], self.secondary_yData[line])
-
-    def on_state_changed(self, state, i):
-        self.toggle_line(i, state == 2)
 
     def on_baudrate_changed(self, text):
         self.serialDevice.setBaudrate(int(text))
