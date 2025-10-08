@@ -85,7 +85,8 @@ class SerialPlotter(QWidget):
             "show_Stats": True,
             "show_Grid": True,
             "filter_Differential": False,
-            "timestep": 1e-3
+            "timestep": 1e-3,
+            "sampling_frequency": 1000
         }
         self.exportSettings = {
             "output_Filename": "output.csv",
@@ -255,9 +256,14 @@ class SerialPlotter(QWidget):
                 
             elif childName == 'Plot parameter.Timestep (s)':
                 self.plotSettings["timestep"] = data
+                self.plotSettings["sampling_frequency"] = 1/data
                 self.timestep = data
                 self.setAxis({'Scale': self.timestep}, axis='bottom')
-                # self.setXAxisTicks(self.timestep)
+            elif childName == 'Plot parameter.Sampling Frequency (Hz)':
+                self.plotSettings["sampling_frequency"] = data
+                self.timestep = 1/data
+                self.plotSettings["timestep"] = self.timestep
+                self.setAxis({'Scale': self.timestep}, axis='bottom')
             elif childName == 'Plot parameter.Show Grid':
                 self.plotSettings["show_Grid"] = data
                 self.toggle_grid(data)

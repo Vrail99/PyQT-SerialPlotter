@@ -33,6 +33,11 @@
                     "name": "Timestep (s)",
                     "type": "float",
                     "value": 1e-3
+                },
+                {
+                    "name": "Sampling Frequency (Hz)",
+                    "type": "int",
+                    "value": 1000
                 }
             ]
         },
