@@ -85,8 +85,7 @@ class SerialPlotter(QWidget):
             "show_Stats": True,
             "show_Grid": True,
             "filter_Differential": False,
-            "timestep": 1e-3,
-            "sampling_frequency": 1000
+            "timestep": 1e-3
         }
         self.exportSettings = {
             "output_Filename": "output.csv",
@@ -154,6 +153,15 @@ class SerialPlotter(QWidget):
             stats_group.child('Max').setValue(stat["max"])
             stats_group.child('Mean').setValue(stat["mean"])
             stats_group.child('Std').setValue(stat["std"])
+
+        if (self.samplecount >= 1000):
+            
+            dt = time.time() - self.Samples_per_second
+            self.SPS = self.samplecount/dt
+            self.Samples_per_second = time.time()
+            self.samplecount = 0
+
+            self.params.child("Plot parameter").child("Sampling Frequency (Hz)").setValue(self.SPS)
 
     def loadParameterConfig(self):
         """Load parameter tree configuration from JSON file"""
@@ -259,11 +267,7 @@ class SerialPlotter(QWidget):
                 self.plotSettings["sampling_frequency"] = 1/data
                 self.timestep = data
                 self.setAxis({'Scale': self.timestep}, axis='bottom')
-            elif childName == 'Plot parameter.Sampling Frequency (Hz)':
-                self.plotSettings["sampling_frequency"] = data
-                self.timestep = 1/data
-                self.plotSettings["timestep"] = self.timestep
-                self.setAxis({'Scale': self.timestep}, axis='bottom')
+
             elif childName == 'Plot parameter.Show Grid':
                 self.plotSettings["show_Grid"] = data
                 self.toggle_grid(data)
@@ -679,6 +683,7 @@ class SerialPlotter(QWidget):
 
                 if self.exportSettings["stream_To_File"]:
                     self.outfile.write(stri + "\n")
+
                 self.samplecount += 1
             except ValueError as e:
                 print("UPDATE_PLOT:", e)
@@ -705,37 +710,37 @@ class SerialPlotter(QWidget):
         if self.plotSettings["show_Stats"]:
             self.update_statistics()
         
-    def update_file(self):
-        while self.serialDevice.is_open and self.serialDevice.getInWaiting() > 0:
-            try:
-                line = self.serialDevice.readLine().decode()  # Use SerialDevice to read line
-                values = line.split(',')
-                #Init String with timestamp
-                stri = f"{time.time()}"
-                for i, val in enumerate(values):
-                    data_point = float(val)
-                    stri += f",{data_point}"
-                    self.yData[i] = np.roll(self.yData[i], -1)  # Roll data to the left
-                    self.yData[i][-1] = data_point  # Update the last value with new data
-                self.outfile.write(stri + "\n")
-                self.samplecount += 1
-            except ValueError as e:
-                print("UPDATE_FILE:", e)
-            except ConnectionError as e:
-                print("UPDATE_FILE:", e)
+    # def update_file(self):
+    #     while self.serialDevice.is_open and self.serialDevice.getInWaiting() > 0:
+    #         try:
+    #             line = self.serialDevice.readLine().decode()  # Use SerialDevice to read line
+    #             values = line.split(',')
+    #             #Init String with timestamp
+    #             stri = f"{time.time()}"
+    #             for i, val in enumerate(values):
+    #                 data_point = float(val)
+    #                 stri += f",{data_point}"
+    #                 self.yData[i] = np.roll(self.yData[i], -1)  # Roll data to the left
+    #                 self.yData[i][-1] = data_point  # Update the last value with new data
+    #             self.outfile.write(stri + "\n")
+    #             self.samplecount += 1
+    #         except ValueError as e:
+    #             print("UPDATE_FILE:", e)
+    #         except ConnectionError as e:
+    #             print("UPDATE_FILE:", e)
                 
-            filesize = self.outfile.tell()/(1024*1024)  # Get file size in MB
-            # Emit signal once per MB of filesize
-            if not hasattr(self, "_last_emitted_mb"):
-                self._last_emitted_mb = -1
-            current_mb = int(filesize)
-            if current_mb != self._last_emitted_mb:
-                self.filesizeupdate.emit(filesize)
-                self._last_emitted_mb = current_mb
+    #         filesize = self.outfile.tell()/(1024*1024)  # Get file size in MB
+    #         # Emit signal once per MB of filesize
+    #         if not hasattr(self, "_last_emitted_mb"):
+    #             self._last_emitted_mb = -1
+    #         current_mb = int(filesize)
+    #         if current_mb != self._last_emitted_mb:
+    #             self.filesizeupdate.emit(filesize)
+    #             self._last_emitted_mb = current_mb
 
-        for i in range(len(self.datalines)):
-            if self.datalines[i].isVisible():
-                self.datalines[i].setData(self.xData[i], self.yData[i])     
+    #     for i in range(len(self.datalines)):
+    #         if self.datalines[i].isVisible():
+    #             self.datalines[i].setData(self.xData[i], self.yData[i])     
 
     def save_to_csv(self):
         filename, _ = QFileDialog.getSaveFileName(self, "Save to CSV", "", "CSV Files (*.csv)")
