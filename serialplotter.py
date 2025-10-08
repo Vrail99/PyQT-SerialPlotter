@@ -70,7 +70,7 @@ class SerialPlotter(QWidget):
         self.oldtime = time.time_ns()
         self.serialDevice = SerialDevice(baudrate=921600, timeout=1)
 
-        # Read dataline names from JSON config
+        # Read dataline names from JSON config and get the amount of datalines
         try:
             with open("dataline_config.json", "r") as f:
                 config = json.load(f)
@@ -84,8 +84,8 @@ class SerialPlotter(QWidget):
             "show_Points": False,
             "show_Stats": True,
             "show_Grid": True,
-            "Maximum_Number_of_Lines": len(self.dataline_config),
-            "filter_Differential": False
+            "filter_Differential": False,
+            "timestep": 1e-3
         }
         self.exportSettings = {
             "output_Filename": "output.csv",
@@ -110,7 +110,7 @@ class SerialPlotter(QWidget):
 
         self.maxplotlength = 1000
         #Data rate is 1 kHz
-        self.timestep = 1e-3
+        self.timestep = self.plotSettings["timestep"]
 
         self.incomingDataScaling = 1/1000 # Incoming Data is in mbar
         self.yscale = 0.75  # conversion factor to mmHg
@@ -214,8 +214,6 @@ class SerialPlotter(QWidget):
                         self.plotSettings["show_Stats"] = value
                     elif name == "Show Grid":
                         self.plotSettings["show_Grid"] = value
-                    elif name == "Maximum Number Of Lines":
-                        self.plotSettings["Maximum_Number_of_Lines"] = value
                     elif name == "Filter Differential":
                         self.plotSettings["filter_Differential"] = value
             elif group["name"] == "Export Settings":
@@ -240,7 +238,7 @@ class SerialPlotter(QWidget):
             if childName == 'Plot parameter.Show Fft':
                 self.plotSettings["show_FFT"] = data
                 if data:
-                    for i in range(self.plotSettings["Maximum_Number_of_Lines"]):
+                    for i in range(len(self.datalines)):
                         if self.datalines[i].isVisible():
                             fft, freq = self.calcFFT(self.yData[i], self.timestep)
                             self.secondary_datalines[i].setData(freq, fft)
@@ -255,14 +253,14 @@ class SerialPlotter(QWidget):
             elif childName == 'Plot parameter.Show Stats':
                 self.plotSettings["show_Stats"] = data
                 
-
+            elif childName == 'Plot parameter.Timestep (s)':
+                self.plotSettings["timestep"] = data
+                self.timestep = data
+                self.setAxis({'Scale': self.timestep}, axis='bottom')
+                # self.setXAxisTicks(self.timestep)
             elif childName == 'Plot parameter.Show Grid':
                 self.plotSettings["show_Grid"] = data
                 self.toggle_grid(data)
-            elif childName == 'Plot parameter.Maximum Number Of Lines':
-                self.plotSettings["Maximum_Number_of_Lines"] = data
-                # Optionally, reinitialize canvas or update UI
-                self.initCanvas()
             elif childName == 'Plot parameter.Filter Differential':
                 self.plotSettings["filter_Differential"] = data
                 self.yData[-1] = self.highpass_filter(self.yData[2], cutoff=0.3, fs=1000)
@@ -278,11 +276,16 @@ class SerialPlotter(QWidget):
 
 
     def setOutputToFile(self, filename):
-        """Outputs the data to a file"""
+        """Streams the data to a file"""
         self.outfile = open(filename, "w+")
+        # Write header to the output file
+        header = "Time"
+        for i, line_cfg in enumerate(self.dataline_config):
+            header += f",{line_cfg.get('name', f'Line{i}')}"
+        self.outfile.write(header + "\n")
         self.exportSettings["stream_To_File"] = True
-        self.timer.timeout.disconnect()
-        self.timer.timeout.connect(self.update_file)
+        # self.timer.timeout.disconnect()
+        # self.timer.timeout.connect(self.update_file)
 
     def setOutputToPlot(self):
         """Outputs the data to the plot"""
@@ -291,11 +294,11 @@ class SerialPlotter(QWidget):
             self.outfile.close()
         
         self.exportSettings["stream_To_File"] = False
-        self.timer.timeout.disconnect()
-        self.timer.timeout.connect(self.update_plot)
+        # self.timer.timeout.disconnect()
+        # self.timer.timeout.connect(self.update_plot)
         
     def toggle_points(self, checked):
-        for i in range(self.plotSettings["Maximum_Number_of_Lines"]):
+        for i in range(len(self.datalines)):
             self.datalines[i].setSymbol('o' if checked else None)
             self.secondary_datalines[i].setSymbol('o' if checked else None)
     
@@ -340,7 +343,7 @@ class SerialPlotter(QWidget):
         self.yData = []
         self.secondary_yData = []
 
-        for i in range(self.plotSettings["Maximum_Number_of_Lines"]):  # Assuming there are at most 5 lines
+        for i in range(len(self.dataline_config)):  # Assuming there are at most 5 lines
             x = np.arange(self.maxplotlength)
             y = np.ones(self.maxplotlength)
             self.datalines.append(self.livePlotItem.plot(x, y, pen=(i, 5), width=1,
@@ -649,21 +652,27 @@ class SerialPlotter(QWidget):
         
         return h_high_pass
 
-    def update_plot(self):
-        if self.sendCommands:
-            self.serialDevice.writeCommand(self.command)  # Use SerialDevice to send commands
-        
+    def update_plot(self):       
         while self.serialDevice.is_open and self.serialDevice.getInWaiting() > 0:
             try:
                 line = self.serialDevice.readLine().decode()  # Use SerialDevice to read line
                 values = line.split(',')
+                if self.exportSettings["stream_To_File"]:
+                    stri = f"{time.time()}"
+
+
                 for i, val in enumerate(values):
-                    if i >= self.plotSettings["Maximum_Number_of_Lines"]:
+                    if i >= len(self.datalines):
                         break
                     data_point = float(val)
-                    
+                    if self.exportSettings["stream_To_File"]:
+                        stri += f",{data_point}"
+
                     self.yData[i] = np.roll(self.yData[i], -1)  # Roll data to the left
                     self.yData[i][-1] = data_point  # Update the last value with new data
+
+                if self.exportSettings["stream_To_File"]:
+                    self.outfile.write(stri + "\n")
                 self.samplecount += 1
             except ValueError as e:
                 print("UPDATE_PLOT:", e)
@@ -673,13 +682,13 @@ class SerialPlotter(QWidget):
         if self.plotSettings["filter_Differential"]:
            self.yData[-1] = self.highpass_filter(self.yData[2], cutoff=0.3, fs=1000)
 
-        for i in range(self.plotSettings["Maximum_Number_of_Lines"]):
+        for i in range(len(self.datalines)):
             if self.datalines[i].isVisible():
                 self.datalines[i].setData(self.xData[i], self.yData[i])
 
         # Calculate and plot FFT for each visible line
         if self.plotSettings["show_FFT"]:
-            for i in range(self.plotSettings["Maximum_Number_of_Lines"]):
+            for i in range(len(self.datalines)):
                 if self.datalines[i].isVisible():
                     fft, freq = self.calcFFT(self.yData[i], self.timestep)
                     self.secondary_datalines[i].setData(freq, fft)
@@ -718,7 +727,7 @@ class SerialPlotter(QWidget):
                 self.filesizeupdate.emit(filesize)
                 self._last_emitted_mb = current_mb
 
-        for i in range(self.plotSettings["Maximum_Number_of_Lines"]):
+        for i in range(len(self.datalines)):
             if self.datalines[i].isVisible():
                 self.datalines[i].setData(self.xData[i], self.yData[i])     
 
@@ -727,10 +736,10 @@ class SerialPlotter(QWidget):
         if not filename:
             return
         # filename_sec = filename.replace(".csv", "_secondary.csv")
-        outdata = np.zeros((self.plotSettings["Maximum_Number_of_Lines"]+1, self.maxplotlength))
-        outdata_sec = np.zeros((self.plotSettings["Maximum_Number_of_Lines"]+1, self.maxplotlength))
+        outdata = np.zeros((len(self.datalines)+1, self.maxplotlength))
+        outdata_sec = np.zeros((len(self.datalines)+1, self.maxplotlength))
 
-        for i in range(self.plotSettings["Maximum_Number_of_Lines"]):
+        for i in range(len(self.datalines)):
                 if self.datalines[i].isVisible():
                     x, y = self.datalines[i].getData()
                     if x == None or y == None:
@@ -738,7 +747,7 @@ class SerialPlotter(QWidget):
                     outdata[i+1,:len(y)] = y
                     outdata[0,:len(x)] = x * self.timestep
 
-        for i in range(self.plotSettings["Maximum_Number_of_Lines"]):
+        for i in range(len(self.secondary_datalines)):
             if self.secondary_datalines[i].isVisible():
                 x, y = self.secondary_datalines[i].getData()
                 if x == None or y == None:
@@ -764,7 +773,7 @@ class SerialPlotter(QWidget):
         #Construct headers
         #Add time axis
         header.append(str(self.livePlotItem.getAxis('bottom').labelText) + '[ms]')
-        for i in range(self.plotSettings["Maximum_Number_of_Lines"]):
+        for i in range(len(self.datalines)):
             if self.datalines[i].isVisible():
                 header.append(self.datalines[i].name())
         

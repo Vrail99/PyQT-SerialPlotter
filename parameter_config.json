@@ -25,15 +25,14 @@
                     "value": true
                 },
                 {
-                    "name": "Maximum Number Of Lines",
-                    "type": "int",
-                    "value": 5,
-                    "limits": [1, 10]
-                },
-                {
                     "name": "Filter Differential",
                     "type": "bool",
                     "value": false
+                },
+                {
+                    "name": "Timestep (s)",
+                    "type": "float",
+                    "value": 1e-3
                 }
             ]
         },
