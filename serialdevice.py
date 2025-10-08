@@ -34,7 +34,6 @@ class SerialDevice(serial.Serial):
             self.port = port
             self.open()
         except:
-            print("Oh oh")
             return "Could not open the port. Check if the device is connected."
         
         return f"Connection opened on port {self.port}."

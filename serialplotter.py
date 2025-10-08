@@ -125,9 +125,6 @@ class SerialPlotter(QWidget):
         # Load parameter configuration from JSON file
         self.loadParameterConfig()
         
-        
-
-        
         self.init_ui()
         
 
@@ -230,23 +227,7 @@ class SerialPlotter(QWidget):
                     elif name == "Stream To File":
                         self.exportSettings["stream_To_File"] = value
 
-    def initChildren(self, parameters:dict):
-        # Dynamically create children from self.plotSettings
-        _children = []
-        for key, value in parameters.items():
-            if isinstance(value, bool):
-                _children.append({'name': key.replace('_', ' ').title(), 'type': 'bool', 'value': value})
-            elif isinstance(value, int):
-                # Add limits for Maximum_Number_of_Lines, otherwise generic int
-                if key == "Maximum_Number_of_Lines":
-                    _children.append({'name': key.replace('_', ' ').title(), 'type': 'int', 'value': value, 'limits': (1, 10)})
-                else:
-                    _children.append({'name': key.replace('_', ' ').title(), 'type': 'int', 'value': value})
-            elif isinstance(value, str):
-                _children.append({'name': key.replace('_', ' ').title(), 'type': 'str', 'value': value})
-            # Add more types if needed
 
-        return _children
 
     def on_param_change(self, param, changes):
         for param_, change, data in changes:
@@ -270,9 +251,11 @@ class SerialPlotter(QWidget):
             elif childName == 'Plot parameter.Show Points':
                 self.plotSettings["show_Points"] = data
                 self.toggle_points(data)
+
             elif childName == 'Plot parameter.Show Stats':
                 self.plotSettings["show_Stats"] = data
-                # self.toggle_stats(data)
+                
+
             elif childName == 'Plot parameter.Show Grid':
                 self.plotSettings["show_Grid"] = data
                 self.toggle_grid(data)
@@ -315,7 +298,7 @@ class SerialPlotter(QWidget):
         for i in range(self.plotSettings["Maximum_Number_of_Lines"]):
             self.datalines[i].setSymbol('o' if checked else None)
             self.secondary_datalines[i].setSymbol('o' if checked else None)
-
+    
     def toggle_grid(self, checked):
         self.livePlotItem.showGrid(y=checked)
         self.frequency_PlotItem.showGrid(x=checked)
