@@ -70,30 +70,11 @@ class SerialPlotter(QWidget):
         self.oldtime = time.time_ns()
         self.serialDevice = SerialDevice(baudrate=921600, timeout=1)
 
-        # Read dataline names from JSON config and get the amount of datalines
-        try:
-            with open("dataline_config.json", "r") as f:
-                config = json.load(f)
-                self.dataline_config = config.get("datalines", [])
-        except Exception as e:
-            print(f"Could not read dataline_config.json: {e}")
-            self.dataline_config = []
+        self.parameters = {}
 
-        self.plotSettings = {
-            "show_FFT": True,
-            "show_Points": False,
-            "show_Stats": True,
-            "show_Grid": True,
-            "filter_Differential": False,
-            "timestep": 1e-3
-        }
-        self.exportSettings = {
-            "output_Filename": "output.csv",
-            "stream_To_File": False
-        }
-        self.plotStatus = {
-            "is_Plotting": False
-        }
+        # Load parameter configuration from JSON file
+        self.param_tree = ParameterTree()
+        self.loadParameterConfig()
 
         self.datalines : list[pg.PlotDataItem] = []
         self.secondary_datalines : list[pg.PlotDataItem] = []
@@ -102,15 +83,13 @@ class SerialPlotter(QWidget):
         self.yData : list[np.ndarray] = []
         self.secondary_yData : list[np.ndarray] = []
 
-        
-
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_plot)
         self.plot_running = False
 
         self.maxplotlength = 1000
         #Data rate is 1 kHz
-        self.timestep = self.plotSettings["timestep"]
+        self.timestep = self.parameters["Plot Parameters"]["timestep"]
 
         self.incomingDataScaling = 1/1000 # Incoming Data is in mbar
         self.yscale = 0.75  # conversion factor to mmHg
@@ -120,11 +99,8 @@ class SerialPlotter(QWidget):
         self.command = "VAL?"
         
         self.plotLayout = pg.GraphicsLayoutWidget(border='w')
-        self.param_tree = ParameterTree()
         
-        # Load parameter configuration from JSON file
-        self.loadParameterConfig()
-        
+                
         self.init_ui()
         
 
@@ -161,23 +137,34 @@ class SerialPlotter(QWidget):
             self.Samples_per_second = time.time()
             self.samplecount = 0
 
-            self.params.child("Plot parameter").child("Sampling Frequency (Hz)").setValue(self.SPS)
+            self.params.child("Plot Parameters").child("fs").setValue(self.SPS)
 
     def loadParameterConfig(self):
         """Load parameter tree configuration from JSON file"""
         try:
             with open("parameter_config.json", "r") as f:
                 config = json.load(f)
-                self.parameter_config = config.get("parameters", [])
-                
+                self.param_cfg = config.get("parameters", [])
+                for group in self.param_cfg:
+                    self.parameters[group["name"]] = {child["name"]: child["value"] for child in group["children"]}
                 # Update internal settings with values from config
-                self.updateSettingsFromConfig()
+                # self.updateSettingsFromConfig()
         except Exception as e:
-            print(f"Could not read parameter_config.json: {e}")
+            print(f"Error in the json config: {e}")
             # Fallback to default configuration
-            self.parameter_config = []
+            self.parameters = []
+            sys.exit(1)
 
         # Add per-dataline statistics tracking parameters
+
+        # Read dataline names from JSON config and get the amount of datalines
+        try:
+            with open("dataline_config.json", "r") as f:
+                config = json.load(f)
+                self.dataline_config = config.get("datalines", [])
+        except Exception as e:
+            print(f"Could not read dataline_config.json: {e}")
+            self.dataline_config = []
 
         self.stats = []
         stats_params = []
@@ -201,7 +188,7 @@ class SerialPlotter(QWidget):
             })
 
         # Combine loaded parameters with statistics
-        all_params = self.parameter_config + [{'name': "Statistics", 'type': 'group', 'children': stats_params}]
+        all_params = self.param_cfg + [{'name': "Statistics", 'type': 'group', 'children': stats_params}]
         
         self.params = Parameter.create(name='Parameters', type='group', children=all_params)        
         self.params.sigTreeStateChanged.connect(self.on_param_change)
@@ -210,79 +197,55 @@ class SerialPlotter(QWidget):
             
     def updateSettingsFromConfig(self):
         """Update internal settings dictionaries with values from parameter config"""
-        for group in self.parameter_config:
-            if group["name"] == "Plot parameter":
+        for group in self.parameters:
+
+            if group["name"] == "Plot Parameter":
                 for child in group["children"]:
-                    name = child["name"]
-                    value = child["value"]
-                    if name == "Show Fft":
-                        self.plotSettings["show_FFT"] = value
-                    elif name == "Show Points":
-                        self.plotSettings["show_Points"] = value
-                    elif name == "Show Stats":
-                        self.plotSettings["show_Stats"] = value
-                    elif name == "Show Grid":
-                        self.plotSettings["show_Grid"] = value
-                    elif name == "Filter Differential":
-                        self.plotSettings["filter_Differential"] = value
+                    self.parameters["Plot Parameters"][child["name"]] = child["value"]
             elif group["name"] == "Export Settings":
                 for child in group["children"]:
-                    name = child["name"]
-                    value = child["value"]
-                    if name == "Output Filename":
-                        self.exportSettings["output_Filename"] = value
-                    elif name == "Stream To File":
-                        self.exportSettings["stream_To_File"] = value
-
-
+                    self.parameters["Export Settings"][child["name"]] = child["value"]
 
     def on_param_change(self, param, changes):
-        for param_, change, data in changes:
+        """Handle parameter changes in the UI.
+        """
+        for param_, _, data in changes:
             path = self.params.childPath(param_)
             if path is not None:
+                if path[0] == "Statistics":
+                    continue
                 childName = '.'.join(path)
+                self.parameters[path[0]][path[1]] = data
             else:
                 childName = param_.name()
+                self.parameters[childName] = data
 
-            if childName == 'Plot parameter.Show Fft':
-                self.plotSettings["show_FFT"] = data
+            if childName == 'Plot Parameters.show_fft':
                 if data:
                     for i in range(len(self.datalines)):
                         if self.datalines[i].isVisible():
-                            fft, freq = self.calcFFT(self.yData[i], self.timestep)
+                            fft, freq = self.calcFFT(self.yData[i], self.parameters["Plot Parameters"]["timestep"])
                             self.secondary_datalines[i].setData(freq, fft)
                             self.secondary_datalines[i].setVisible(True)
                         else:
                             self.secondary_datalines[i].setVisible(False)
 
-            elif childName == 'Plot parameter.Show Points':
-                self.plotSettings["show_Points"] = data
+            elif childName == 'Plot Parameters.show_points':
+                self.parameters["Plot Parameters"]["show_points"] = data
                 self.toggle_points(data)
 
-            elif childName == 'Plot parameter.Show Stats':
-                self.plotSettings["show_Stats"] = data
-                
-            elif childName == 'Plot parameter.Timestep (s)':
-                self.plotSettings["timestep"] = data
-                self.plotSettings["sampling_frequency"] = 1/data
+            elif childName == 'Plot Parameters.show_stats':
+                self.parameters["Plot Parameters"]["show_stats"] = data
+
+            elif childName == 'Plot Parameters.timestep':
+                self.parameters["Plot Parameters"]["timestep"] = data
+                self.parameters["Plot Parameters"]["fs"] = 1/data
                 self.timestep = data
                 self.setAxis({'Scale': self.timestep}, axis='bottom')
 
-            elif childName == 'Plot parameter.Show Grid':
-                self.plotSettings["show_Grid"] = data
+            elif childName == 'Plot Parameters.show_grid':
+                self.parameters["Plot Parameters"]["show_grid"] = data
                 self.toggle_grid(data)
-            elif childName == 'Plot parameter.Filter Differential':
-                self.plotSettings["filter_Differential"] = data
-                self.yData[-1] = self.highpass_filter(self.yData[2], cutoff=0.3, fs=1000)
-                self.plotData(self.yData[-1], index=-1)
-            elif childName == 'Export Settings.Output Filename':
-                self.exportSettings["output_Filename"] = data
-            elif childName == 'Export Settings.Stream To File':
-                self.exportSettings["stream_To_File"] = data
-                if data:
-                    self.setOutputToFile(self.exportSettings["output_Filename"])
-                else:
-                    self.setOutputToPlot()
 
 
     def setOutputToFile(self, filename):
@@ -293,9 +256,7 @@ class SerialPlotter(QWidget):
         for i, line_cfg in enumerate(self.dataline_config):
             header += f",{line_cfg.get('name', f'Line{i}')}"
         self.outfile.write(header + "\n")
-        self.exportSettings["stream_To_File"] = True
-        # self.timer.timeout.disconnect()
-        # self.timer.timeout.connect(self.update_file)
+        self.parameters["Export Settings"]["stream_to_file"] = True
 
     def setOutputToPlot(self):
         """Outputs the data to the plot"""
@@ -303,7 +264,7 @@ class SerialPlotter(QWidget):
             self.outfile.flush()
             self.outfile.close()
         
-        self.exportSettings["stream_To_File"] = False
+        self.parameters["Export Settings"]["stream_to_file"] = False
         # self.timer.timeout.disconnect()
         # self.timer.timeout.connect(self.update_plot)
         
@@ -389,8 +350,8 @@ class SerialPlotter(QWidget):
         self.frequency_PlotItem.getAxis('bottom').setStyle(tickFont=tickfont)
         self.frequency_PlotItem.getAxis('left').setStyle(tickFont=tickfont)
 
-        self.frequency_PlotItem.showGrid(x=self.plotSettings["show_Grid"])
-        self.livePlotItem.showGrid(y=self.plotSettings["show_Grid"])
+        self.frequency_PlotItem.showGrid(x=self.parameters["Plot Parameters"]["show_grid"])
+        self.livePlotItem.showGrid(y=self.parameters["Plot Parameters"]["show_grid"])
 
         self.updateLegend()
 
@@ -493,15 +454,15 @@ class SerialPlotter(QWidget):
             self.plot_running = True
             self.aquisitionStarted.emit("Started")
             self.timer.start(1)  # Update plot every ms
-            if self.exportSettings["stream_To_File"]:
-                self.outfile = open(self.exportSettings["outfilename"], "a+")
+            if self.parameters["Export Settings"]["stream_to_file"]:
+                self.outfile = open(self.parameters["Export Settings"]["outfilename"], "a+")
         else:
             self.start_stop_button.setText("Start DAQ & Plot")
             self.timer.stop()
             self.serialDevice.flush()
             self.plot_running = False
             self.aquisitionStopped.emit("Stopped")
-            if self.exportSettings["stream_To_File"]:
+            if self.parameters["Export Settings"]["stream_to_file"]:
                 self.outfile.flush()
                 self.outfile.close()
 
@@ -576,7 +537,7 @@ class SerialPlotter(QWidget):
         self.livePlotItem.legend.removeItem(self.datalines[index])
         self.livePlotItem.legend.addItem(self.datalines[index], label)
 
-        if self.plotSettings["show_FFT"]:
+        if self.parameters["Plot Parameters"]["show_fft"]:
             freq, fft = self.calcFFT(yData, self.timestep)
             self.plotSecondaryData(yData=fft, xData=freq, index=index, label=label)
 
@@ -667,21 +628,20 @@ class SerialPlotter(QWidget):
             try:
                 line = self.serialDevice.readLine().decode()  # Use SerialDevice to read line
                 values = line.split(',')
-                if self.exportSettings["stream_To_File"]:
+                if self.parameters["Export Settings"]["stream_to_file"]:
                     stri = f"{time.time()}"
-
 
                 for i, val in enumerate(values):
                     if i >= len(self.datalines):
                         break
                     data_point = float(val)
-                    if self.exportSettings["stream_To_File"]:
+                    if self.parameters["Export Settings"]["stream_to_file"]:
                         stri += f",{data_point}"
 
                     self.yData[i] = np.roll(self.yData[i], -1)  # Roll data to the left
                     self.yData[i][-1] = data_point  # Update the last value with new data
 
-                if self.exportSettings["stream_To_File"]:
+                if self.parameters["Export Settings"]["stream_to_file"]:
                     self.outfile.write(stri + "\n")
 
                 self.samplecount += 1
@@ -690,15 +650,13 @@ class SerialPlotter(QWidget):
             except ConnectionError as e:
                 print("UPDATE_PLOT:", e)
 
-        if self.plotSettings["filter_Differential"]:
-           self.yData[-1] = self.highpass_filter(self.yData[2], cutoff=0.3, fs=1000)
 
         for i in range(len(self.datalines)):
             if self.datalines[i].isVisible():
                 self.datalines[i].setData(self.xData[i], self.yData[i])
 
         # Calculate and plot FFT for each visible line
-        if self.plotSettings["show_FFT"]:
+        if self.parameters["Plot Parameters"]["show_fft"]:
             for i in range(len(self.datalines)):
                 if self.datalines[i].isVisible():
                     fft, freq = self.calcFFT(self.yData[i], self.timestep)
@@ -707,7 +665,7 @@ class SerialPlotter(QWidget):
                 else:
                     self.secondary_datalines[i].setVisible(False)
 
-        if self.plotSettings["show_Stats"]:
+        if self.parameters["Plot Parameters"]["show_stats"]:
             self.update_statistics()
         
     # def update_file(self):

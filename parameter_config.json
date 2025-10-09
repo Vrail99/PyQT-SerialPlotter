@@ -1,43 +1,50 @@
 {
     "parameters": [
         {
-            "name": "Plot parameter",
+            "name": "Plot Parameters",
             "type": "group",
             "children": [
                 {
-                    "name": "Show Fft",
+                    "name": "show_fft",
+                    "Description": "Show FFT on secondary plot-plane",
                     "type": "bool",
                     "value": true
                 },
                 {
-                    "name": "Show Points",
+                    "name": "show_points",
+                    "Description": "Show data points on plot",
                     "type": "bool",
                     "value": false
                 },
                 {
-                    "name": "Show Stats",
+                    "name": "show_stats",
+                    "Description": "Show statistics (min, max, mean, std) on plot",
                     "type": "bool",
                     "value": true
                 },
                 {
-                    "name": "Show Grid",
+                    "name": "show_grid",
+                    "Description": "Show grid on plot",
                     "type": "bool",
                     "value": true
                 },
                 {
-                    "name": "Filter Differential",
-                    "type": "bool",
-                    "value": false
-                },
-                {
-                    "name": "Timestep (s)",
+                    "name": "timestep",
+                    "Description": "Time between two samples in seconds",
                     "type": "float",
                     "value": 1e-3
                 },
                 {
-                    "name": "Sampling Frequency (Hz)",
+                    "name" : "fs",
+                    "Description": "Sampling Frequency (Hz)",
                     "type": "int",
                     "value": 1000
+                },
+                {
+                    "name": "time_window",
+                    "Description": "Time window to display in seconds",
+                    "type": "float",
+                    "value": 10.0
                 }
             ]
         },
@@ -46,12 +53,14 @@
             "type": "group",
             "children": [
                 {
-                    "name": "Output Filename",
+                    "name": "output_filename",
+                    "Description": "Output Filename",
                     "type": "str",
                     "value": "output.csv"
                 },
                 {
-                    "name": "Stream To File",
+                    "name": "stream_to_file",
+                    "Description": "Stream data to file",
                     "type": "bool",
                     "value": false
                 }
