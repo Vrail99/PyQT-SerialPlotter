@@ -1,33 +1,28 @@
 {
     "datalines": [
         {
-            "name": "Time",
+            "name": "HighSense",
             "index": 0,
             "visible": true
         },
         {
-            "name": "HighSense",
+            "name": "DiffSense",
             "index": 1,
             "visible": true
         },
         {
-            "name": "DiffSense",
+            "name": "LowSense",
             "index": 2,
             "visible": true
         },
         {
-            "name": "LowSense",
+            "name": "Ventil1",
             "index": 3,
             "visible": true
         },
         {
-            "name": "Line 5",
+            "name": "Ventil2",
             "index": 4,
-            "visible": true
-        },
-        {
-            "name": "Line 6",
-            "index": 5,
             "visible": true
         }
     ]
