@@ -86,7 +86,7 @@ class SerialDevice(serial.Serial):
         self.write(padded_content.encode('utf-8'))
         
 
-    def _readline(self) -> bytearray:
+    def _readline(self, max_tries=1) -> bytearray:
         """Reads a Line from the Serial bus, without a newline character.
         reads a maximum of 4096 bytes at once.
 
@@ -113,20 +113,26 @@ class SerialDevice(serial.Serial):
             data = self.read(i)
             if (len(data) == 0):
                 nr_tries += 1
-                if nr_tries > 1:
+                if nr_tries > max_tries:
                     raise serial.SerialTimeoutException("Timeout while reading from serial port")
                 continue
             self.inputbuffer += data # add data to buffer
 
-    def readLine(self):
+    def readLine(self, max_tries=1) -> bytearray:
         """
         Read a line from the serial device.
         :return: The line read from the serial device.
         """
         if not self.is_open:
             raise ConnectionError("Connection is not open.")
-        return self._readline()
-    
+        try:
+            data = self._readline(max_tries=max_tries)
+        except serial.SerialTimeoutException:
+            print("Timeout while reading from serial port")
+            self.close()
+            raise
+        return data
+
     def flush(self):
         """
         Flush the serial connection.

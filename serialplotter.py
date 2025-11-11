@@ -7,7 +7,6 @@ from PySide6.QtCore import QTimer, Slot as pyqtSlot, Signal as pyqtSignal
 from PySide6.QtGui import QIntValidator
 from serialdevice import SerialDevice
 
-from scipy.signal import butter, filtfilt
 from pyqtgraph.parametertree import Parameter, ParameterTree
 
 class SerialPlotter(QWidget):
@@ -97,6 +96,8 @@ class SerialPlotter(QWidget):
 
         self.sendCommands = False
         self.command = "VAL?"
+
+        self.command_terminator = "\n"
         
         self.plotLayout = pg.GraphicsLayoutWidget(border='w')
         
@@ -124,11 +125,13 @@ class SerialPlotter(QWidget):
             stat["max"] = float(np.max(y))
             stat["mean"] = float(np.mean(y))
             stat["std"] = float(np.std(y))
+            stat["slope"]= float((y[-1]-y[0])/(len(y)*self.timestep))
             stats_group = self.params.child("Statistics").children()[i]
             stats_group.child('Min').setValue(stat["min"])
             stats_group.child('Max').setValue(stat["max"])
             stats_group.child('Mean').setValue(stat["mean"])
             stats_group.child('Std').setValue(stat["std"])
+            stats_group.child('Slope').setValue(stat["slope"])
 
         if (self.samplecount >= 1000):
             
@@ -174,6 +177,7 @@ class SerialPlotter(QWidget):
             "max": float('-inf'),
             "mean": 0.0,
             "std": 0.0,
+            "slope": 0.0,
             }
             self.stats.append(stat)
             stats_params.append({
@@ -184,6 +188,7 @@ class SerialPlotter(QWidget):
                 {'name': 'Max', 'type': 'float', 'value': stat["max"], 'readonly': True},
                 {'name': 'Mean', 'type': 'float', 'value': stat["mean"], 'readonly': True, 'decimals': 4},
                 {'name': 'Std', 'type': 'float', 'value': stat["std"], 'readonly': True, 'decimals': 4},
+                {'name': 'Slope', 'type': 'float', 'value': stat["slope"], 'readonly': True, 'decimals': 1},
             ]
             })
 
@@ -442,7 +447,9 @@ class SerialPlotter(QWidget):
 
 
     def sendCommand(self):
-        self.serialDevice.write(str(self.edit_pressure.text()).encode('utf-8') + b'\n')
+        t = str(self.edit_pressure.text()) + self.command_terminator
+        self.serialDevice.write(t.encode('utf-8'))
+        print("Answer:", self.serialDevice.readLine().decode())
 
     @pyqtSlot()
     def toggle_plot(self):
