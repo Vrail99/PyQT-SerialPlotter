@@ -45,6 +45,15 @@
                     "Description": "Time window to display in seconds",
                     "type": "float",
                     "value": 10.0
+                },
+                {
+                    "name": "Alpha-Filter-Value",
+                    "Description": "Alpha filter smoothing factor",
+                    "type": "float",
+                    "value": 0.4,
+                    "min": 0.0,
+                    "max": 1.0,
+                    "step": 0.01
                 }
             ]
         },

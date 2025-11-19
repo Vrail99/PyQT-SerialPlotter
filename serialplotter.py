@@ -82,6 +82,8 @@ class SerialPlotter(QWidget):
         self.yData : list[np.ndarray] = []
         self.secondary_yData : list[np.ndarray] = []
 
+        self.alpha = 0.4  # Smoothing factor for data
+
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_plot)
         self.plot_running = False
@@ -251,6 +253,10 @@ class SerialPlotter(QWidget):
             elif childName == 'Plot Parameters.show_grid':
                 self.parameters["Plot Parameters"]["show_grid"] = data
                 self.toggle_grid(data)
+
+            elif childName == 'Plot Parameters.Alpha-Filter-Value':
+                self.alpha = data
+                
 
 
     def setOutputToFile(self, filename):
@@ -645,8 +651,9 @@ class SerialPlotter(QWidget):
                     if self.parameters["Export Settings"]["stream_to_file"]:
                         stri += f",{data_point}"
 
+                    
                     self.yData[i] = np.roll(self.yData[i], -1)  # Roll data to the left
-                    self.yData[i][-1] = data_point  # Update the last value with new data
+                    self.yData[i][-1] = data_point*self.alpha + (1-self.alpha)*self.yData[i][-2]  # Update the last value with new data
 
                 if self.parameters["Export Settings"]["stream_to_file"]:
                     self.outfile.write(stri + "\n")
