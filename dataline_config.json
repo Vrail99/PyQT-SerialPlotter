@@ -1,28 +1,13 @@
 {
     "datalines": [
         {
-            "name": "HighSense",
+            "name": "Rohwert",
             "index": 0,
             "visible": true
         },
         {
-            "name": "DiffSense",
+            "name": "Druck (mbar)",
             "index": 1,
-            "visible": true
-        },
-        {
-            "name": "LowSense",
-            "index": 2,
-            "visible": true
-        },
-        {
-            "name": "Ventil1",
-            "index": 3,
-            "visible": true
-        },
-        {
-            "name": "Ventil2",
-            "index": 4,
             "visible": true
         }
     ]
