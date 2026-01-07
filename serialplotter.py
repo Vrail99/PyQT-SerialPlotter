@@ -93,8 +93,8 @@ class SerialPlotter(QWidget):
         self.timestep = self.parameters["Plot Parameters"]["timestep"]
 
         self.incomingDataScaling = 1/1000 # Incoming Data is in mbar
-        self.yscale = 0.75  # conversion factor to mmHg
-        self.yUnit = "mHg"  # Shown data unit
+        self.yscale = 1#0.75  # conversion factor to mmHg
+        self.yUnit = "Bar"#"mHg"  # Shown data unit
 
         self.sendCommands = False
         self.command = "VAL?"
@@ -256,11 +256,23 @@ class SerialPlotter(QWidget):
 
             elif childName == 'Plot Parameters.Alpha-Filter-Value':
                 self.alpha = data
+
+            elif childName == 'Export Settings.output_filename':
+                print("New Filename: ", data)
+                self.parameters["Export Settings"]["output_filename"] = data
+
+            elif childName == 'Export Settings.stream_to_file':
+                if data:
+                    filename = self.parameters["Export Settings"]["output_filename"]
+                    self.setOutputToFile(filename)
+                else:
+                    self.setOutputToPlot()
                 
 
 
     def setOutputToFile(self, filename):
         """Streams the data to a file"""
+        print("Writing to file")
         self.outfile = open(filename, "w+")
         # Write header to the output file
         header = "Time"
@@ -276,8 +288,6 @@ class SerialPlotter(QWidget):
             self.outfile.close()
         
         self.parameters["Export Settings"]["stream_to_file"] = False
-        # self.timer.timeout.disconnect()
-        # self.timer.timeout.connect(self.update_plot)
         
     def toggle_points(self, checked):
         for i in range(len(self.datalines)):
