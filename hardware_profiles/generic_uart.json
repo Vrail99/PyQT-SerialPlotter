@@ -1,0 +1,15 @@
+{
+    "name": "Generic UART Device",
+    "driver": "GenericSerialDriver",
+    "baudrate": 921600,
+    "timeout": 1.0,
+    "terminator": "\n",
+    "commands": {
+        "get_value": "VAL?"
+    },
+    "data_format": {
+        "type": "csv",
+        "separator": ",",
+        "scale_factors": []
+    }
+}

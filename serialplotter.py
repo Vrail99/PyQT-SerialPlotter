@@ -23,6 +23,7 @@ from data_buffer import DataBufferManager
 from statistics import StatisticsCalculator, SampleRateTracker
 from signal_processing import FFTCalculator, DataProcessor
 from plot_manager import PlotManager
+from hardware_driver_manager import HardwareDriverManager
 
 class SerialPlotter(QWidget):
     """
@@ -54,7 +55,11 @@ class SerialPlotter(QWidget):
         # Load configuration
         self.config = ApplicationConfig.from_json_files()
         
-        # Initialize serial device
+        # Initialize hardware driver system
+        self.driver_manager = HardwareDriverManager()
+        self.current_driver = None
+        
+        # Keep serial device for backward compatibility (fallback)
         self.serial_device = SerialDevice(
             baudrate=Constants.DEFAULT_BAUDRATE,
             timeout=1
@@ -132,21 +137,43 @@ class SerialPlotter(QWidget):
         """Create serial port and baudrate controls."""
         layout = QHBoxLayout()
         
+        # Hardware profile dropdown
+        profile_label = QLabel("Profile:")
+        self.profile_dropdown = QComboBox()
+        profile_names = self.driver_manager.get_profile_names()
+        if profile_names:
+            self.profile_dropdown.addItems(profile_names)
+        else:
+            self.profile_dropdown.addItem("No profiles found")
+        
         # Port dropdown
+        port_label = QLabel("Port:")
         self.port_dropdown = QComboBox()
         self.port_dropdown.enterEvent = self._populate_ports
         self._populate_ports(None)
         self.port_dropdown.currentIndexChanged.connect(self._on_port_changed)
         
         # Baudrate dropdown
+        baud_label = QLabel("Baud:")
         self.baudrate_dropdown = QComboBox()
         self.baudrate_dropdown.addItems(["921600", "115200", "9600"])
         self.baudrate_dropdown.setCurrentText(str(Constants.DEFAULT_BAUDRATE))
         self.baudrate_dropdown.setToolTip("Baudrate")
         self.baudrate_dropdown.currentTextChanged.connect(self._on_baudrate_changed)
         
+        layout.addWidget(profile_label)
+        layout.addWidget(self.profile_dropdown)
+        layout.addWidget(port_label)
         layout.addWidget(self.port_dropdown)
+        layout.addWidget(baud_label)
         layout.addWidget(self.baudrate_dropdown)
+        
+        # Connect profile change handler after widgets are created
+        self.profile_dropdown.currentTextChanged.connect(self._on_profile_changed)
+        
+        # Initialize first profile if available
+        if profile_names:
+            self._on_profile_changed(profile_names[0])
         
         return layout
     
@@ -336,9 +363,33 @@ class SerialPlotter(QWidget):
     # Serial Port Handling
     # =====================
     
+    def _on_profile_changed(self, profile_name: str) -> None:
+        """Handle hardware profile selection."""
+        if profile_name == "No profiles found":
+            return
+        
+        # Disconnect current driver if any
+        if self.current_driver and self.current_driver.is_connected:
+            self.current_driver.disconnect()
+        
+        # Create new driver
+        self.current_driver = self.driver_manager.create_driver(profile_name)
+        
+        if self.current_driver:
+            # Update baudrate dropdown to match profile
+            self.baudrate_dropdown.setCurrentText(str(self.current_driver.profile.baudrate))
+            print(f"Selected profile: {profile_name}")
+        else:
+            QMessageBox.warning(self, "Error", f"Failed to create driver for {profile_name}")
+    
     def _populate_ports(self, event) -> None:
         """Populate serial ports dropdown."""
-        ports = self.serial_device.list_devices()
+        # Use driver's method if available, otherwise fall back to SerialDevice
+        if self.current_driver:
+            ports = self.current_driver.list_available_ports()
+        else:
+            ports = self.serial_device.list_devices()
+        
         ports.insert(0, (" ", "Disconnect"))
         
         if len(ports) != self.port_dropdown.count():
@@ -351,27 +402,48 @@ class SerialPlotter(QWidget):
         port = self.port_dropdown.currentText().split('-')[0]
         
         if port == " ":
-            self.serial_device.close()
+            # Disconnect driver or fallback serial device
+            if self.current_driver:
+                self.current_driver.disconnect()
+            else:
+                self.serial_device.close()
             self.portChanged.emit(" ")
             return
         
+        if not self.current_driver:
+            QMessageBox.warning(self, "Error", "Please select a hardware profile first.")
+            return
+        
         try:
-            self.serial_device.open_connection(port)
-            self.portChanged.emit(port)
+            success = self.current_driver.connect(port)
+            if success:
+                self.current_driver.initialize()
+                self.portChanged.emit(port)
+                print(f"Connected to {port}")
+            else:
+                QMessageBox.warning(self, "Error", "Failed to connect to device")
         except Exception as e:
             QMessageBox.warning(self, "Error", str(e))
     
     def _on_baudrate_changed(self, baudrate_str: str) -> None:
         """Handle baudrate change."""
-        self.serial_device.setBaudrate(int(baudrate_str))
+        baudrate = int(baudrate_str)
+        if self.current_driver:
+            self.current_driver.set_baudrate(baudrate)
+        else:
+            self.serial_device.setBaudrate(baudrate)
     
     def _send_command(self) -> None:
-        """Send command to serial device."""
-        command = str(self.command_input.text()) + Constants.COMMAND_TERMINATOR
+        """Send command to hardware."""
+        if not self.current_driver or not self.current_driver.is_connected:
+            QMessageBox.warning(self, "Error", "Not connected to hardware")
+            return
+        
+        command = str(self.command_input.text())
         try:
-            self.serial_device.write(command.encode('utf-8'))
-            response = self.serial_device.readLine().decode()
-            print(f"Answer: {response}")
+            response = self.current_driver.write_command(command)
+            print(f"Command: {command}")
+            print(f"Response: {response}")
         except Exception as e:
             print(f"Error sending command: {e}")
 
@@ -389,8 +461,9 @@ class SerialPlotter(QWidget):
     
     def _start_acquisition(self) -> None:
         """Start data acquisition."""
-        if not self.serial_device.is_open:
-            QMessageBox.warning(self, "Error", "Please select a COM port.")
+        # Check if driver is connected
+        if not self.current_driver or not self.current_driver.is_connected:
+            QMessageBox.warning(self, "Error", "Please connect to a device first.")
             return
         
         self.start_stop_button.setText("Stop DAQ & Plot")
@@ -409,7 +482,11 @@ class SerialPlotter(QWidget):
         """Stop data acquisition."""
         self.start_stop_button.setText("Start DAQ & Plot")
         self.timer.stop()
-        self.serial_device.flush()
+        
+        # Flush driver if connected
+        if self.current_driver and self.current_driver.is_connected:
+            self.current_driver.flush()
+        
         self.is_acquiring = False
         self.acquisitionStopped.emit("Stopped")
         
@@ -464,12 +541,18 @@ class SerialPlotter(QWidget):
     
     def _read_serial_data(self) -> int:
         """Read and process available serial data."""
+        if not self.current_driver or not self.current_driver.is_connected:
+            return 0
+        
         samples_count = 0
         
-        while self.serial_device.is_open and self.serial_device.getInWaiting() > 0:
+        while self.current_driver.is_data_available():
             try:
-                line = self.serial_device.readLine().decode()
-                values = line.split(',')
+                # Read sample from driver (already parsed!)
+                values = self.current_driver.read_sample()
+                
+                if values is None:
+                    continue
                 
                 # Prepare file output if streaming
                 file_line = None
@@ -477,11 +560,9 @@ class SerialPlotter(QWidget):
                     file_line = f"{time.time()}"
                 
                 # Process each channel
-                for channel, value_str in enumerate(values):
+                for channel, data_value in enumerate(values):
                     if channel >= len(self.config.datalines):
                         break
-                    
-                    data_value = float(value_str)
                     
                     # Add to file line if streaming
                     if file_line is not None:
@@ -621,8 +702,9 @@ class SerialPlotter(QWidget):
         if self.is_acquiring:
             self._stop_acquisition()
         
-        # Close serial connection
-        self.serial_device.close_connection()
+        # Disconnect driver if connected
+        if self.current_driver and self.current_driver.is_connected:
+            self.current_driver.disconnect()
         
         event.accept()
 

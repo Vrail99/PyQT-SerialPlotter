@@ -1,0 +1,24 @@
+{
+    "name": "Custom ADC Board v1",
+    "driver": "GenericSerialDriver",
+    "baudrate": 115200,
+    "timeout": 1.0,
+    "terminator": "\r\n",
+    "commands": {
+        "initialize": "INIT",
+        "start_streaming": "STREAM:ON",
+        "stop_streaming": "STREAM:OFF",
+        "get_single_value": "VAL?",
+        "set_sample_rate": "RATE:{rate}",
+        "calibrate": "CAL:START",
+        "reset": "RST",
+        "get_status": "STAT?"
+    },
+    "data_format": {
+        "type": "csv",
+        "separator": ",",
+        "channels": 5,
+        "scale_factors": [1.0, 1.0, 1.0, 1.0, 1.0],
+        "units": ["V", "V", "V", "V", "V"]
+    }
+}
