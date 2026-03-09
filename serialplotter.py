@@ -92,9 +92,9 @@ class SerialPlotter(QWidget):
         #Data rate is 1 kHz
         self.timestep = self.parameters["Plot Parameters"]["timestep"]
 
-        self.incomingDataScaling = 1/1000 # Incoming Data is in mbar
-        self.yscale = 0.75  # conversion factor to mmHg
-        self.yUnit = "mHg"  # Shown data unit
+        self.incomingDataScaling = 1 # Incoming Data is in mbar
+        self.yscale = self.parameters["Plot Parameters"]["y-Scaling"]  # conversion factor to mmHg
+        self.yUnit = self.parameters["Plot Parameters"]["y-Unit"]  # Shown data unit
 
         self.sendCommands = False
         self.command = "VAL?"
@@ -254,8 +254,24 @@ class SerialPlotter(QWidget):
                 self.parameters["Plot Parameters"]["show_grid"] = data
                 self.toggle_grid(data)
 
+            elif childName == 'Plot Parameters.y-Scaling':
+                self.parameters["Plot Parameters"]["y-Scaling"] = data
+                self.yscale = data
+                self.setAxis({'Scale': self.yscale}, axis='left')
+
+            elif childName == 'Plot Parameters.y-Unit':
+                self.parameters["Plot Parameters"]["y-Unit"] = data
+                self.yUnit = data
+                self.setAxis({'Label': "Amplitude", 'Units': self.yUnit}, axis='left')
+
             elif childName == 'Plot Parameters.Alpha-Filter-Value':
                 self.alpha = data
+
+            elif childName == 'Export Settings.stream_to_file':
+                if data:
+                    self.setOutputToFile(self.parameters["Export Settings"]["output_filename"])
+                else:
+                    self.setOutputToPlot()
                 
 
 
@@ -776,7 +792,7 @@ class SerialPlotter(QWidget):
         self.initCanvas()
 
     def on_baudrate_changed(self, text):
-        self.serialDevice.setBaudrate(int(text))
+        self.serialDevice.setBaudrate(int(text))    
 
     def closeEvent(self, event):
         self.serialDevice.close_connection()  # Use SerialDevice to close the connection

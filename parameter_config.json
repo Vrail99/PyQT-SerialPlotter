@@ -47,10 +47,22 @@
                     "value": 10.0
                 },
                 {
+                    "name": "y-Scaling",
+                    "Description": "Scaling factor for the plot",
+                    "type": "float",
+                    "value": 1.0
+                },
+                {
+                    "name": "y-Unit",
+                    "Description": "Unit of the Y-axis",
+                    "type": "str",
+                    "value": "mV"
+                },
+                {
                     "name": "Alpha-Filter-Value",
                     "Description": "Alpha filter smoothing factor",
                     "type": "float",
-                    "value": 0.4,
+                    "value": 1.0,
                     "min": 0.0,
                     "max": 1.0,
                     "step": 0.01
