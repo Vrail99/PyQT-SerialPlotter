@@ -55,6 +55,24 @@ class HardwareDriver(ABC):
         """
         self.profile = profile
         self.is_connected = False
+
+    def safe_connect(self, port: str) -> tuple[bool, Optional[str]]:
+        """
+        Connect with error handling.
+        
+        Args:
+            port: Serial port identifier (e.g., 'COM3', '/dev/ttyUSB0')
+            
+        Returns:
+            Tuple of (success: bool, error_message: str or None)
+        """
+        try:
+            success = self.connect(port)
+            if not success:
+                return False, "Connection failed without exception"
+            return True, None
+        except TimeoutError as e:
+            return False, f"Connection timeout: {str(e)}"
     
     @abstractmethod
     def connect(self, port: str) -> bool:
@@ -68,6 +86,20 @@ class HardwareDriver(ABC):
             True if connection successful, False otherwise
         """
         pass
+
+    def safe_disconnect(self) -> tuple[bool, Optional[str]]:
+        """
+        Disconnect with error handling.
+        
+        Returns:
+            Tuple of (success: bool, error_message: str or None)
+        """
+        
+        try:
+            self.disconnect()
+            return True, None
+        except TimeoutError as e:
+            return False, f"Timeout during disconnect: {str(e)}"
     
     @abstractmethod
     def disconnect(self) -> None:
@@ -121,9 +153,9 @@ class HardwareDriver(ABC):
     
     # Optional methods with default implementations
     
-    def initialize(self) -> bool:
+    def safe_initialize(self) -> tuple[bool, Optional[str]]:
         """
-        Initialize hardware after connection.
+        Initialize hardware after connection, safely
         
         Override this to send initialization commands defined in the profile.
         The default implementation sends the 'initialize' command if defined.
@@ -131,12 +163,15 @@ class HardwareDriver(ABC):
         Returns:
             True if initialization successful
         """
-        init_cmd = self.profile.commands.get('initialize', '')
-        if init_cmd:
-            response = self.write_command(init_cmd)
-            return response is not None
-        return True
-    
+        try:
+            init_cmd = self.profile.commands.get('initialize', '')
+            if init_cmd:
+                response = self.write_command(init_cmd)
+                return response is not None, response if response is not None else "No response to initialization command"
+            return True, None
+        except TimeoutError as e:
+            return False, f"Initialization timeout: {e}"
+
     def start_streaming(self) -> bool:
         """
         Start continuous data streaming mode.

@@ -51,7 +51,7 @@ class PlotManager:
     
     def _style_axes(self) -> None:
         """Apply styling to plot axes."""
-        tick_font = pg.QtGui.QFont('Arial', 14)
+        tick_font = pg.QtGui.QFont('DejaVu Sans', 14)
         label_style = {'font-size': '14pt', 'color': '#FFF'}
         
         # Style time-domain plot

@@ -16,7 +16,7 @@ from PySide6.QtCore import QTimer, Slot as pyqtSlot, Signal as pyqtSignal
 from PySide6.QtGui import QIntValidator
 
 # Import our custom modules
-from serialdevice import SerialDevice
+from drivers.serialdevice import SerialDevice
 from pyqtgraph.parametertree import Parameter, ParameterTree
 from config import ApplicationConfig, Constants
 from data_buffer import DataBufferManager
@@ -24,6 +24,7 @@ from statistics import StatisticsCalculator, SampleRateTracker
 from signal_processing import FFTCalculator, DataProcessor
 from plot_manager import PlotManager
 from hardware_driver_manager import HardwareDriverManager
+from drivers.driver_config_dialog import DriverConfigDialog
 
 class SerialPlotter(QWidget):
     """
@@ -152,6 +153,16 @@ class SerialPlotter(QWidget):
         self.port_dropdown.enterEvent = self._populate_ports
         self._populate_ports(None)
         self.port_dropdown.currentIndexChanged.connect(self._on_port_changed)
+
+        # Connection status indicator button
+        self.connection_status_button = QPushButton("●")
+        self.connection_status_button.setFixedSize(35, 25)
+        self.connection_status_button.setToolTip("Disconnected - Click to reconnect")
+        self.connection_status_button.setStyleSheet(
+            "QPushButton { background-color: #cc0000; color: white; font-size: 16px; font-weight: bold; border-radius: 3px; }"
+            "QPushButton:hover { background-color: #ff0000; }"
+        )
+        self.connection_status_button.clicked.connect(self._reconnect_device)
         
         # Baudrate dropdown
         baud_label = QLabel("Baud:")
@@ -160,11 +171,18 @@ class SerialPlotter(QWidget):
         self.baudrate_dropdown.setCurrentText(str(Constants.DEFAULT_BAUDRATE))
         self.baudrate_dropdown.setToolTip("Baudrate")
         self.baudrate_dropdown.currentTextChanged.connect(self._on_baudrate_changed)
+
+        # Driver configuration button
+        self.config_button = QPushButton("Driver Config")
+        self.config_button.clicked.connect(self._open_driver_config)
+        self.config_button.setToolTip("Open driver configuration and command interface")
         
         layout.addWidget(profile_label)
         layout.addWidget(self.profile_dropdown)
+        layout.addWidget(self.config_button)
         layout.addWidget(port_label)
         layout.addWidget(self.port_dropdown)
+        layout.addWidget(self.connection_status_button)
         layout.addWidget(baud_label)
         layout.addWidget(self.baudrate_dropdown)
         
@@ -221,9 +239,10 @@ class SerialPlotter(QWidget):
         
         self.save_button = QPushButton("Save to CSV")
         self.save_button.clicked.connect(self.save_to_csv)
-        
+
         layout.addWidget(self.start_stop_button)
         layout.addWidget(self.save_button)
+
         widget.setLayout(layout)
         
         return widget
@@ -370,15 +389,21 @@ class SerialPlotter(QWidget):
         
         # Disconnect current driver if any
         if self.current_driver and self.current_driver.is_connected:
-            self.current_driver.disconnect()
+            dc_succ, dc_err = self.current_driver.safe_disconnect()
+            if dc_err:
+                QMessageBox.warning(self, "Error", f"Error disconnecting current driver: {dc_err}")
         
         # Create new driver
         self.current_driver = self.driver_manager.create_driver(profile_name)
         
         if self.current_driver:
             # Update baudrate dropdown to match profile
+            self.driver_manager.set_current_driver(self.current_driver)
+
             self.baudrate_dropdown.setCurrentText(str(self.current_driver.profile.baudrate))
             print(f"Selected profile: {profile_name}")
+
+            self._update_connection_status()
         else:
             QMessageBox.warning(self, "Error", f"Failed to create driver for {profile_name}")
     
@@ -404,10 +429,13 @@ class SerialPlotter(QWidget):
         if port == " ":
             # Disconnect driver or fallback serial device
             if self.current_driver:
-                self.current_driver.disconnect()
+                dc_succ, dc_err = self.current_driver.safe_disconnect()
+                if dc_err:
+                    QMessageBox.warning(self, "Error", f"Error disconnecting current driver: {dc_err}")
             else:
                 self.serial_device.close()
             self.portChanged.emit(" ")
+            self._update_connection_status()
             return
         
         if not self.current_driver:
@@ -424,6 +452,8 @@ class SerialPlotter(QWidget):
                 QMessageBox.warning(self, "Error", "Failed to connect to device")
         except Exception as e:
             QMessageBox.warning(self, "Error", str(e))
+        finally:
+            self._update_connection_status()
     
     def _on_baudrate_changed(self, baudrate_str: str) -> None:
         """Handle baudrate change."""
@@ -446,6 +476,70 @@ class SerialPlotter(QWidget):
             print(f"Response: {response}")
         except Exception as e:
             print(f"Error sending command: {e}")
+
+    def _update_connection_status(self) -> None:
+        """Update the connection status indicator button."""
+        if self.current_driver and self.current_driver.is_connected:
+            # Connected - Green
+            self.connection_status_button.setStyleSheet(
+                "QPushButton { background-color: #00cc00; color: white; font-size: 16px; font-weight: bold; border-radius: 3px; }"
+                "QPushButton:hover { background-color: #00ff00; }"
+            )
+            self.connection_status_button.setToolTip("Connected - Click to reconnect")
+        else:
+            # Disconnected - Red
+            self.connection_status_button.setStyleSheet(
+                "QPushButton { background-color: #cc0000; color: white; font-size: 16px; font-weight: bold; border-radius: 3px; }"
+                "QPushButton:hover { background-color: #ff0000; }"
+            )
+            self.connection_status_button.setToolTip("Disconnected - Click to reconnect")
+    
+    def _reconnect_device(self) -> None:
+        """Reconnect to the currently selected device."""
+        if not self.current_driver:
+            QMessageBox.warning(self, "Error", "No hardware profile selected")
+            return
+        
+        current_port = self.port_dropdown.currentText().split('-')[0]
+        
+        if current_port == " " or not current_port:
+            QMessageBox.information(self, "Info", "Please select a COM port first")
+            return
+        
+        # Disconnect if currently connected
+        if self.current_driver.is_connected:
+            print("Disconnecting...")
+            dc_succ, dc_err = self.current_driver.safe_disconnect()
+            if dc_err:
+                QMessageBox.warning(self, "Error", f"Error disconnecting current driver: {dc_err}")
+            self._update_connection_status()
+        
+        # Attempt to reconnect
+        print(f"Reconnecting to {current_port}...")
+
+        success, error = self.current_driver.safe_connect(current_port)
+        if not success:
+            QMessageBox.warning(self, "Error", f"Failed to reconnect to device: {error}")
+            self._update_connection_status()
+            return
+            
+        init_success, init_error = self.current_driver.safe_initialize()
+        if init_success:
+            self.portChanged.emit(current_port)
+            self._update_connection_status()
+            return
+        
+        if init_error:
+            QMessageBox.warning(self, "Initialization Error",
+                                init_error + "\n\nPossible causes:\n"
+                                +"- Wrong baud rate selected\n"
+                                +"- Device not responding\n"
+                                +"- Device not powered on")
+                
+        dc_succ, dc_err = self.current_driver.safe_disconnect()
+        if dc_err:
+            QMessageBox.warning(self, "Error", f"Error disconnecting current driver: {dc_err}")
+
 
     # ========================
     # Data Acquisition Control
@@ -695,6 +789,12 @@ class SerialPlotter(QWidget):
     def get_max_plot_length(self) -> int:
         """Get current maximum plot length."""
         return self.max_plot_length
+
+    
+    def _open_driver_config(self) -> None:
+        """Open the driver configuration dialog."""
+        dialog = DriverConfigDialog(self.driver_manager, self)
+        dialog.exec()
     
     def closeEvent(self, event) -> None:
         """Handle widget close event."""
@@ -704,7 +804,9 @@ class SerialPlotter(QWidget):
         
         # Disconnect driver if connected
         if self.current_driver and self.current_driver.is_connected:
-            self.current_driver.disconnect()
+            dc_succ, dc_err = self.current_driver.safe_disconnect()
+            if dc_err:
+                QMessageBox.warning(self, "Error", f"Error disconnecting current driver: {dc_err}")
         
         event.accept()
 

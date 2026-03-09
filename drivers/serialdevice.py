@@ -1,25 +1,45 @@
 import serial
 import serial.tools.list_ports
-#from fast_readline import ReadLine
+from serial.serialutil import SerialException, SerialTimeoutException
+from typing import Optional, List
 import threading  # Add threading for continuous reading
 
-class SerialDevice(serial.Serial):
-    def __init__(self, port=None, baudrate=115200, timeout=15, terminationCharacter=b'\n'):
+# Import HardwareDriver for interface compliance
+from hardware_driver import HardwareDriver, HardwareProfile
+
+
+class SerialDevice(serial.Serial, HardwareDriver):
+    def __init__(self, port=None, baudrate: int = 115200, timeout: float = 1, terminationCharacter: bytes = b'\n', profile: Optional[HardwareProfile] = None):
         """
         Initialize the SerialDevice object.
-        :param port: The serial port to connect to (e.g., 'COM3' or '/dev/ttyUSB0').
-        :param baudrate: The baud rate for the serial connection.
-        :param timeout: The timeout for the serial connection in seconds.
+        
+        Args:
+            port: The serial port to connect to (e.g., 'COM3' or '/dev/ttyUSB0').
+            baudrate: The baud rate for the serial connection.
+            timeout: The timeout for the serial connection in seconds (float).
+            terminationCharacter: Line termination character.
+            profile: Optional HardwareProfile for driver interface compliance.
         """
-        super().__init__(port, baudrate, timeout=timeout)
-        self.port = port
-        self.baudrate = baudrate
-        self.timeout = timeout
+        # Initialize serial.Serial parent
+        serial.Serial.__init__(self, port, baudrate, timeout=timeout)
+        
+        # Initialize HardwareDriver parent if profile provided
+        if profile:
+            HardwareDriver.__init__(self, profile)
+            # Override with profile settings
+            self.baudrate = profile.baudrate
+            self.timeout = profile.timeout
+            self.terminationCharacter = profile.terminator.encode() if isinstance(profile.terminator, str) else profile.terminator
+        else:
+            # Create a minimal profile for backward compatibility
+            self.profile = None
+            self.is_connected = False
+            self.terminationCharacter = terminationCharacter
+        
+        self.write_timeout = timeout
         self.linereader = ReadLine(self)
-        self.linereader.setTerminationCharacter(terminationCharacter)
-
+        self.linereader.setTerminationCharacter(self.terminationCharacter)
         self.inputbuffer = bytearray()
-        self.terminationCharacter = b"\n"
 
    
     def open_connection(self, port):
@@ -33,7 +53,7 @@ class SerialDevice(serial.Serial):
         try:
             self.port = port
             self.open()
-        except:
+        except SerialException as e:
             return "Could not open the port. Check if the device is connected."
         
         return f"Connection opened on port {self.port}."
@@ -179,6 +199,174 @@ class SerialDevice(serial.Serial):
     
     def getInWaiting(self):
         return self.in_waiting + len(self.inputbuffer)
+    
+    # ==========================================
+    # HardwareDriver interface implementation
+    # ==========================================
+    
+    def connect(self, port: str) -> bool:
+        """
+        Connect to serial port (HardwareDriver interface).
+        
+        Args:
+            port: Serial port identifier (e.g., 'COM3')
+            
+        Returns:
+            True if connection successful
+        """
+        try:
+            result = self.open_connection(port)
+            self.is_connected = self.is_open
+            return self.is_connected
+        except Exception as e:
+            print(f"Connection error: {e}")
+            raise
+    
+    def disconnect(self) -> None:
+        """Disconnect from serial port (HardwareDriver interface)."""
+        if self.is_open:
+            self.close()
+        self.is_connected = False
+    
+    def initialize(self) -> bool:
+        """
+        Initialize device with optional initialization command.
+        
+        Returns:
+            True if initialization successful
+        """
+        try:
+            # Send initialization command if defined in profile
+            if self.profile and 'initialize' in self.profile.commands:
+                command = self.profile.commands['initialize']
+                response = self.write_command(command)
+                if response is None:
+                    print(f"Warning: No response to initialization command")
+            return True
+        except SerialTimeoutException as e:
+            print(f"Initialization timeout: {e}")
+            raise TimeoutError(f"Initialization timeout: {e}")
+        except Exception as e:
+            print(f"Initialization warning: {e}")
+            return True
+    
+    def read_sample(self) -> Optional[List[float]]:
+        """
+        Read one line and parse CSV values (HardwareDriver interface).
+        
+        Reads a line from the serial device, splits it by the configured
+        separator, converts values to floats, and optionally applies scale factors.
+        
+        Returns:
+            List of float values, or None on error
+        """
+        if not self.is_data_available():
+            return None
+        
+        try:
+            line = self.readLine().decode().strip()
+            
+            # Get separator from profile (default to comma)
+            separator = ','
+            scale_factors = []
+            if self.profile and self.profile.data_format:
+                separator = self.profile.data_format.get('separator', ',')
+                scale_factors = self.profile.data_format.get('scale_factors', [])
+            
+            # Split and parse values
+            value_strings = line.split(separator)
+            data = [float(v.strip()) for v in value_strings if v.strip()]
+            
+            # Apply scale factors if configured
+            if scale_factors and len(scale_factors) > 0:
+                data = [d * s if i < len(scale_factors) else d 
+                       for i, (d, s) in enumerate(zip(data, scale_factors))]
+            
+            return data
+            
+        except SerialTimeoutException as e:
+            print(f"Read timeout: {e}")
+            raise TimeoutError(f"Read timeout: {e}")
+        except Exception as e:
+            print(f"Read error: {e}")
+            return None
+    
+    def write_command(self, command: str) -> Optional[str]:
+        """
+        Send command and read response (HardwareDriver interface).
+        
+        Args:
+            command: Command string to send (without terminator)
+            
+        Returns:
+            Response string, or None on error
+        """
+        try:
+            # Add terminator from profile
+            if self.profile:
+                full_command = command + self.profile.terminator
+            else:
+                full_command = command + '\n'
+            
+            self.write(full_command.encode('utf-8'))
+            
+            # Read response
+            response = self.readLine().decode().strip()
+            return response
+            
+        except SerialTimeoutException as e:
+            print(f"Write command timed out: {e}")
+            raise TimeoutError(f"Write command timed out: {e}")
+    
+    def is_data_available(self) -> bool:
+        """
+        Check if data is available to read (HardwareDriver interface).
+        
+        Returns:
+            True if serial port is open and has waiting data
+        """
+        return self.is_open and self.getInWaiting() > 0
+    
+    def set_baudrate(self, baudrate: int) -> None:
+        """
+        Change baudrate (HardwareDriver interface).
+        
+        Args:
+            baudrate: New baudrate value
+        """
+        if self.profile:
+            self.profile.baudrate = baudrate
+        self.baudrate = baudrate
+        if self.is_open:
+            # Note: setBaudrate from serial.Serial parent updates the hardware
+            pass
+    
+    def list_available_ports(self) -> List[tuple]:
+        """
+        List available serial ports (HardwareDriver interface).
+        
+        Returns:
+            List of tuples (port_name, port_description)
+        """
+        return self.list_devices()
+    
+    def get_device_info(self) -> dict:
+        """
+        Get device information (HardwareDriver interface).
+        
+        Returns:
+            Dictionary with device details
+        """
+        info = {
+            'driver_type': 'SerialDevice',
+            'baudrate': self.baudrate,
+            'timeout': self.timeout,
+            'port': self.port if hasattr(self, 'port') else 'Unknown',
+            'is_open': self.is_open
+        }
+        if self.profile:
+            info['profile_name'] = self.profile.name
+        return info
 
 ##############################################################################################################
 ################                        Readline Helperclass                          ########################
