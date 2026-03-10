@@ -1,22 +1,92 @@
-# SerialPlotter - Refactored Architecture
+# SerialPlotter — Architecture
 
 ## Overview
 
-The SerialPlotter application has been refactored for improved maintainability with separated concerns across multiple modules.
+SerialPlotter is a real-time serial-data acquisition and plotting application built with
+PySide6 and pyqtgraph.  The codebase is organised into responsibility-based Python
+packages.  `serialplotter.py` acts as a thin coordinator; everything else lives in one
+of the four domain packages below.
 
-## File Structure
+## Package Structure
 
 ```
-serialplotter.py      # Main application widget (refactored)
-config.py             # Configuration management with dataclasses
-data_buffer.py        # Multi-channel data buffer management
-statistics.py         # Statistical calculations for channels
-signal_processing.py  # FFT and filtering utilities
-plot_manager.py       # PyQtGraph plot management
-serialdevice.py       # Serial port communication (existing)
-parameter_config.json # Plot and export settings
-dataline_config.json  # Channel configuration
+serialplotter.py            # Entry point / main coordinator widget
+
+core/
+    config.py               # ApplicationConfig, PlotConfig, ExportConfig,
+                            #   DatalineConfig, Constants
+    models.py               # AcquisitionState (enum), ConnectionInfo,
+                            #   AcquisitionInfo (DTOs)
+    error_handler.py        # ErrorHandler, ErrorSeverity
+
+acquisition/
+    connection_manager.py   # ConnectionManager — driver lifecycle & port selection
+    acquisition_engine.py   # AcquisitionEngine — sample reading loop
+    file_stream_manager.py  # FileStreamManager — real-time CSV export
+
+visualization/
+    data_buffer.py          # DataBufferManager — rolling numpy buffers
+    plot_manager.py         # PlotManager — pyqtgraph time & frequency plots
+    signal_processing.py    # FFTCalculator, SignalFilter, DataProcessor
+    statistics.py           # StatisticsCalculator, ChannelStatistics
+
+ui/
+    ui_builder.py           # UIBuilder — widget construction + action signals
+    parameter_manager.py    # ParameterManager — ParameterTree management
+    dialogs/
+        driver_config.py    # DriverConfigDialog — hardware command dialog
+
+hardware/
+    base.py                 # HardwareDriver (ABC), HardwareProfile (dataclass)
+    manager.py              # HardwareDriverManager — profile loading & driver factory
+    drivers/
+        serial_device.py    # SerialDevice — pyserial wrapper implementing HardwareDriver
+        generic_serial.py   # GenericSerialDriver — thin wrapper for CSV devices
+        debug_serial.py     # DebugSerialDriver — diagnostics-enhanced driver
+        template.py         # TemplateDriver — starter template for new drivers
+
+hardware_profiles/          # JSON hardware profile files (loaded at runtime)
+parameter_config.json       # Default plot / export parameter values
+dataline_config.json        # Channel name and visibility configuration
 ```
+
+## Data Flow
+
+```
+Serial port
+    └─ SerialDevice (hardware/drivers/serial_device.py)
+           └─ ConnectionManager (acquisition/connection_manager.py)
+                  └─ AcquisitionEngine.read_available_samples()
+                         ├─ sampleReceived signal ──► SerialPlotter._on_sample_received()
+                         │                                ├─ FileStreamManager.write_sample()
+                         │                                └─ DataBufferManager.append_sample()
+                         └─ sampleRateUpdated ──► ParameterManager.update_fs()
+
+QTimer (1 ms) ──► SerialPlotter.update_plot()
+    ├─ DataBufferManager.get_channel_data() ──► PlotManager.update_line_data()
+    ├─ FFTCalculator.calculate_fft()        ──► PlotManager.update_frequency_data()
+    └─ StatisticsCalculator.compute_all()  ──► ParameterManager.update_statistics()
+```
+
+## Naming Conventions
+
+| Scope        | Convention                                    |
+|------------- |-----------------------------------------------|
+| Files        | `snake_case.py`                               |
+| Classes      | `PascalCase`                                  |
+| Packages     | `snake_case/`                                 |
+| Imports      | Absolute package paths (`from core.config …`) |
+| No shims     | Old root-level modules have been removed      |
+
+## Adding a New Hardware Driver
+
+1. Copy `hardware/drivers/template.py` to e.g. `hardware/drivers/my_device.py`.
+2. Rename the class to e.g. `MyDeviceDriver`.
+3. Implement all abstract methods (`connect`, `disconnect`, `read_sample`,
+   `write_command`, `is_data_available`, `flush`).
+4. Create a JSON profile in `hardware_profiles/` with `"driver": "MyDeviceDriver"`.
+5. The manager resolves the module automatically via `_class_to_module()` which strips
+   the `Driver` suffix: `MyDeviceDriver` → `hardware.drivers.my_device`.
 
 ## Architecture
 

@@ -1,57 +1,50 @@
 """
-UI construction for SerialPlotter.
+UI builder: constructs all widgets and emits signals for user actions.
 
-Builds all widgets and layouts, emitting signals for user actions
-so SerialPlotter can stay decoupled from UI details.
+SerialPlotter connects to these signals and delegates to the appropriate manager,
+keeping the coordinator free of widget-level details.
 """
 
 from PySide6.QtWidgets import (
     QHBoxLayout, QVBoxLayout, QWidget, QPushButton,
-    QComboBox, QLineEdit, QLabel
+    QComboBox, QLineEdit, QLabel,
 )
 from PySide6.QtCore import QObject, Signal as pyqtSignal
 from PySide6.QtGui import QIntValidator
-from config import Constants
+
+from core.config import Constants
 
 
 class UIBuilder(QObject):
-    """
-    Builds the SerialPlotter UI and exposes user actions as signals.
+    """Builds the SerialPlotter UI and exposes user actions as signals."""
 
-    All widget creation is contained here. SerialPlotter connects to
-    the signals and delegates to the appropriate manager.
-    """
-
-    # User action signals
-    profileSelected = pyqtSignal(str)
-    portSelected = pyqtSignal(str)
-    baudrateChanged = pyqtSignal(int)
-    baudrateDisplay = pyqtSignal(str)   # for syncing baudrate from profile
+    profileSelected    = pyqtSignal(str)
+    portSelected       = pyqtSignal(str)
+    baudrateChanged    = pyqtSignal(int)
     reconnectRequested = pyqtSignal()
     commandSendRequested = pyqtSignal(str)
-    plotLengthChanged = pyqtSignal(int)
+    plotLengthChanged  = pyqtSignal(int)
     clearPlotsRequested = pyqtSignal()
-    startStopToggled = pyqtSignal()
-    saveCsvRequested = pyqtSignal()
+    startStopToggled   = pyqtSignal()
+    saveCsvRequested   = pyqtSignal()
     driverConfigRequested = pyqtSignal()
 
-    def __init__(self, driver_manager, connection_manager, config, max_plot_length):
+    def __init__(self, driver_manager, connection_manager, config, max_plot_length) -> None:
         super().__init__()
         self.driver_manager = driver_manager
         self.connection_manager = connection_manager
         self.config = config
         self.max_plot_length = max_plot_length
 
-        # Exposed widget references
-        self.profile_dropdown = None
-        self.port_dropdown = None
-        self.connection_status_button = None
-        self.baudrate_dropdown = None
-        self.command_input = None
-        self.plot_length_input = None
-        self.start_stop_button = None
+        self.profile_dropdown: QComboBox = None
+        self.port_dropdown: QComboBox = None
+        self.connection_status_button: QPushButton = None
+        self.baudrate_dropdown: QComboBox = None
+        self.command_input: QLineEdit = None
+        self.plot_length_input: QLineEdit = None
+        self.start_stop_button: QPushButton = None
 
-        connection_manager.connectionLost.connect(self._resetPort)
+        connection_manager.connectionLost.connect(self._reset_port)
         connection_manager.connectionEstablished.connect(self._set_port_selection)
 
     def build(self, plot_layout, param_tree) -> QHBoxLayout:
@@ -68,30 +61,28 @@ class UIBuilder(QObject):
         main_layout.addLayout(plot_control, stretch=4)
         return main_layout
 
+    # ─── Layout builders ──────────────────────────────────────────────────
+
     def _build_serial_controls(self) -> QHBoxLayout:
         layout = QHBoxLayout()
 
-        # Profile dropdown
         self.profile_dropdown = QComboBox()
-        profile_names = self.driver_manager.get_profile_names()
-        self.profile_dropdown.addItems(profile_names if profile_names else ["No profiles found"])
+        names = self.driver_manager.get_profile_names()
+        self.profile_dropdown.addItems(names if names else ["No profiles found"])
         self.profile_dropdown.currentTextChanged.connect(self._on_profile_selected)
 
-        # Port dropdown
         self.port_dropdown = QComboBox()
-        self.port_dropdown.enterEvent = lambda e: self._refresh_ports()
+        self.port_dropdown.enterEvent = lambda _e: self._refresh_ports()
         self._refresh_ports()
         self.port_dropdown.currentIndexChanged.connect(
-            lambda: self.portSelected.emit(self.port_dropdown.currentText().split('-')[0])
+            lambda: self.portSelected.emit(self.port_dropdown.currentText().split("-")[0])
         )
 
-        # Connection status button
         self.connection_status_button = QPushButton("●")
         self.connection_status_button.setFixedSize(35, 25)
         self.connection_status_button.clicked.connect(self.reconnectRequested.emit)
         self.set_connection_status(False)
 
-        # Baudrate dropdown
         self.baudrate_dropdown = QComboBox()
         self.baudrate_dropdown.addItems(["921600", "115200", "9600"])
         self.baudrate_dropdown.setCurrentText(str(Constants.DEFAULT_BAUDRATE))
@@ -100,7 +91,6 @@ class UIBuilder(QObject):
             lambda v: self.baudrateChanged.emit(int(v)) if v.isdigit() else None
         )
 
-        # Driver config button
         config_btn = QPushButton("Driver Config")
         config_btn.setToolTip("Open driver configuration and command interface")
         config_btn.clicked.connect(self.driverConfigRequested.emit)
@@ -121,7 +111,7 @@ class UIBuilder(QObject):
     def _build_plot_length_control(self) -> QHBoxLayout:
         layout = QHBoxLayout()
         self.plot_length_input = QLineEdit(str(self.max_plot_length))
-        self.plot_length_input.setValidator(QIntValidator(1, 100000))
+        self.plot_length_input.setValidator(QIntValidator(1, 100_000))
         self.plot_length_input.editingFinished.connect(
             lambda: self.plotLengthChanged.emit(int(self.plot_length_input.text()))
         )
@@ -151,6 +141,8 @@ class UIBuilder(QObject):
         layout.addWidget(save_btn)
         return layout
 
+    # ─── Internal slots ───────────────────────────────────────────────────
+
     def _on_profile_selected(self, name: str) -> None:
         if name != "No profiles found":
             self.profileSelected.emit(name)
@@ -164,33 +156,31 @@ class UIBuilder(QObject):
             self.port_dropdown.blockSignals(False)
 
     def _set_port_selection(self, port: str) -> None:
-        """Set the port dropdown to show the specified port."""
         for i in range(self.port_dropdown.count()):
             if self.port_dropdown.itemText(i).startswith(port):
                 self.port_dropdown.blockSignals(True)
                 self.port_dropdown.setCurrentIndex(i)
                 self.port_dropdown.blockSignals(False)
                 break
-    
-    def _resetPort(self) -> None:
+
+    def _reset_port(self) -> None:
         self.port_dropdown.blockSignals(True)
         self.port_dropdown.setCurrentIndex(0)
         self.port_dropdown.blockSignals(False)
 
-    # ─── Public control methods ────────────────────────────────────────────
+    # ─── Public control API ───────────────────────────────────────────────
 
     def set_connection_status(self, connected: bool) -> None:
-        """Update connection indicator style."""
         if connected:
             style = ("QPushButton { background-color: #00cc00; color: white; font-size: 16px;"
                      " font-weight: bold; border-radius: 3px; }"
                      "QPushButton:hover { background-color: #00ff00; }")
-            tip = "Connected - Click to reconnect"
+            tip = "Connected — Click to reconnect"
         else:
             style = ("QPushButton { background-color: #cc0000; color: white; font-size: 16px;"
                      " font-weight: bold; border-radius: 3px; }"
                      "QPushButton:hover { background-color: #ff0000; }")
-            tip = "Disconnected - Click to reconnect"
+            tip = "Disconnected — Click to reconnect"
         self.connection_status_button.setStyleSheet(style)
         self.connection_status_button.setToolTip(tip)
 
@@ -201,13 +191,13 @@ class UIBuilder(QObject):
         self.baudrate_dropdown.setCurrentText(str(baudrate))
 
     def get_current_port(self) -> str:
-        return self.port_dropdown.currentText().split('-')[0]
+        return self.port_dropdown.currentText().split("-")[0]
 
     def update_ports(self, ports: list) -> None:
         self._refresh_ports()
 
     def initialize_first_profile(self) -> None:
-        """Trigger initial profile signal after all connections are wired."""
+        """Fire the initial profile signal after all connections are wired."""
         name = self.profile_dropdown.currentText()
         if name and name != "No profiles found":
             self.profileSelected.emit(name)

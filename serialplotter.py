@@ -9,20 +9,20 @@ from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QFileDialog
 from PySide6.QtCore import QTimer, Slot as pyqtSlot, Signal as pyqtSignal
 from pyqtgraph.parametertree import ParameterTree
 
-from config import ApplicationConfig, Constants
-from data_buffer import DataBufferManager
-from statistics import StatisticsCalculator
-from signal_processing import FFTCalculator, DataProcessor
-from plot_manager import PlotManager
-from hardware_driver_manager import HardwareDriverManager
-from drivers.driver_config_dialog import DriverConfigDialog
-from error_handler import ErrorHandler
-from connection_manager import ConnectionManager
-from data_acquisition_engine import DataAcquisitionEngine
-from file_stream_manager import FileStreamManager
-from acquisition_state import AcquisitionState
-from ui_builder import UIBuilder
-from parameter_manager import ParameterManager
+from core.config import ApplicationConfig, Constants
+from core.models import AcquisitionState
+from core.error_handler import ErrorHandler
+from hardware.manager import HardwareDriverManager
+from acquisition.connection_manager import ConnectionManager
+from acquisition.acquisition_engine import AcquisitionEngine
+from acquisition.file_stream_manager import FileStreamManager
+from visualization.data_buffer import DataBufferManager
+from visualization.statistics import StatisticsCalculator
+from visualization.signal_processing import FFTCalculator, DataProcessor
+from visualization.plot_manager import PlotManager
+from ui.ui_builder import UIBuilder
+from ui.parameter_manager import ParameterManager
+from ui.dialogs.driver_config import DriverConfigDialog
 
 
 class SerialPlotter(QWidget):
@@ -58,7 +58,7 @@ class SerialPlotter(QWidget):
         self.statistics_calc = StatisticsCalculator(num_channels)
         self.data_processor = DataProcessor(self.config.plot.timestep, self.config.plot.alpha_filter_value)
         self.fft_calculator = FFTCalculator()
-        self.acquisition_engine = DataAcquisitionEngine(self.connection_manager, self.error_handler, num_channels)
+        self.acquisition_engine = AcquisitionEngine(self.connection_manager, self.error_handler, num_channels)
 
         # Plot
         self.plot_layout = pg.GraphicsLayoutWidget(border='w')
