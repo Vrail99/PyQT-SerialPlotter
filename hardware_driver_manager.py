@@ -140,16 +140,11 @@ class HardwareDriverManager:
             return driver
             
         except ModuleNotFoundError as e:
-            print(f"Driver module not found: {module_name}")
-            print(f"Error: {e}")
-            return None
+            raise ModuleNotFoundError(f"Driver module not found {module_name}")
         except AttributeError as e:
-            print(f"Driver class '{profile.driver_class}' not found in module")
-            print(f"Error: {e}")
-            return None
+            raise AttributeError(f"Driver class '{profile.driver_class}' not found in module")
         except Exception as e:
-            print(f"Error creating driver: {e}")
-            return None
+            raise Exception(f"Error creating driver: {e}")
     
     @staticmethod
     def _class_to_module(class_name: str) -> str:

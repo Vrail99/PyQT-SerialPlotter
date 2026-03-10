@@ -239,7 +239,7 @@ class TemplateDriver(HardwareDriver):
         Returns:
             True if initialization successful
         """
-        return super().initialize()
+        return super().safe_initialize()
     
     def start_streaming(self) -> bool:
         """
@@ -293,6 +293,90 @@ class TemplateDriver(HardwareDriver):
         """
         return super().get_device_info()
 
+
+# ======================================================================
+# EXAMPLE: Custom Driver with Initialization and Binary Protocol
+# ======================================================================
+
+class ExampleBinaryDriver(HardwareDriver):
+    """
+    Example driver for a device with binary protocol.
+    
+    This is a complete example showing how to implement a driver
+    for hardware that uses binary data instead of CSV text.
+    """
+    
+    def __init__(self, profile: HardwareProfile):
+        super().__init__(profile)
+        self.serial = None
+        self.packet_size = 20  # Header(1) + Data(16) + Checksum(2) + Footer(1)
+    
+    def connect(self, port: str) -> bool:
+        try:
+            import serial
+            self.serial = serial.Serial(
+                port=port,
+                baudrate=self.profile.baudrate,
+                timeout=self.profile.timeout
+            )
+            self.is_connected = True
+            return True
+        except Exception as e:
+            print(f"Connection failed: {e}")
+            return False
+    
+    def disconnect(self) -> None:
+        if self.serial and self.serial.is_open:
+            self.serial.close()
+        self.is_connected = False
+    
+    def read_sample(self) -> Optional[List[float]]:
+        if not self.is_data_available():
+            return None
+        
+        try:
+            import struct
+            
+            # Read packet
+            packet = self.serial.read(self.packet_size)
+            
+            # Validate header (0xAA)
+            if packet[0] != 0xAA:
+                return None
+            
+            # Validate footer (0x55)
+            if packet[-1] != 0x55:
+                return None
+            
+            # Decode 4 channels (16-bit unsigned integers)
+            ch1, ch2, ch3, ch4 = struct.unpack('<HHHH', packet[1:9])
+            
+            # Convert to voltages (0-65535 -> 0-5V)
+            scale = 5.0 / 65535.0
+            return [ch1 * scale, ch2 * scale, ch3 * scale, ch4 * scale]
+            
+        except Exception as e:
+            print(f"Parse error: {e}")
+            return None
+    
+    def write_command(self, command: str) -> Optional[str]:
+        try:
+            # Commands are ASCII
+            self.serial.write((command + '\r\n').encode())
+            response = self.serial.readline().decode().strip()
+            return response
+        except Exception as e:
+            print(f"Command error: {e}")
+            return None
+    
+    def is_data_available(self) -> bool:
+        return (self.serial and self.serial.is_open and 
+                self.serial.in_waiting >= self.packet_size)
+    
+    def flush(self) -> None:
+        if self.serial and self.serial.is_open:
+            self.serial.reset_input_buffer()
+            self.serial.reset_output_buffer()
 
 # ======================================================================
 # EXAMPLE: Complete Custom Driver Implementation

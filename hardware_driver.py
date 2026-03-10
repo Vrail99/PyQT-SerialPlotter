@@ -55,24 +55,6 @@ class HardwareDriver(ABC):
         """
         self.profile = profile
         self.is_connected = False
-
-    def safe_connect(self, port: str) -> tuple[bool, Optional[str]]:
-        """
-        Connect with error handling.
-        
-        Args:
-            port: Serial port identifier (e.g., 'COM3', '/dev/ttyUSB0')
-            
-        Returns:
-            Tuple of (success: bool, error_message: str or None)
-        """
-        try:
-            success = self.connect(port)
-            if not success:
-                return False, "Connection failed without exception"
-            return True, None
-        except TimeoutError as e:
-            return False, f"Connection timeout: {str(e)}"
     
     @abstractmethod
     def connect(self, port: str) -> bool:
@@ -86,20 +68,6 @@ class HardwareDriver(ABC):
             True if connection successful, False otherwise
         """
         pass
-
-    def safe_disconnect(self) -> tuple[bool, Optional[str]]:
-        """
-        Disconnect with error handling.
-        
-        Returns:
-            Tuple of (success: bool, error_message: str or None)
-        """
-        
-        try:
-            self.disconnect()
-            return True, None
-        except TimeoutError as e:
-            return False, f"Timeout during disconnect: {str(e)}"
     
     @abstractmethod
     def disconnect(self) -> None:
@@ -153,7 +121,7 @@ class HardwareDriver(ABC):
     
     # Optional methods with default implementations
     
-    def safe_initialize(self) -> tuple[bool, Optional[str]]:
+    def initialize(self) -> bool:
         """
         Initialize hardware after connection, safely
         
@@ -163,14 +131,18 @@ class HardwareDriver(ABC):
         Returns:
             True if initialization successful
         """
-        try:
-            init_cmd = self.profile.commands.get('initialize', '')
-            if init_cmd:
-                response = self.write_command(init_cmd)
-                return response is not None, response if response is not None else "No response to initialization command"
-            return True, None
-        except TimeoutError as e:
-            return False, f"Initialization timeout: {e}"
+        
+        init_cmd = self.profile.commands.get('initialize', '')
+        return_on_init = self.profile.commands.get('return_on_init', '?')
+        if init_cmd:
+            response = self.write_command(init_cmd)
+            if response != return_on_init:
+                return False
+            
+        return True
+        # except TimeoutError as e:
+        #     raise TimeoutError(f"Initialization timeout: {e}")
+            # return False, f"Initialization timeout: {e}"
 
     def start_streaming(self) -> bool:
         """
@@ -183,10 +155,15 @@ class HardwareDriver(ABC):
             True if streaming started successfully
         """
         start_cmd = self.profile.commands.get('start_streaming', '')
-        if start_cmd:
-            response = self.write_command(start_cmd)
-            return response is not None
-        return True
+        try:
+            if start_cmd:
+                response = self.write_command(start_cmd)
+                return response is not None
+            return True
+        except TimeoutError as e:
+            raise TimeoutError(f"HardwareDriver: Error starting streaming: {e}")
+    
+        return False
     
     def stop_streaming(self) -> bool:
         """
@@ -244,5 +221,4 @@ class HardwareDriver(ABC):
             ports = serial.tools.list_ports.comports()
             return [(port.device, port.description) for port in ports]
         except ImportError:
-            print("pyserial not installed, cannot list ports")
-            return []
+            raise ImportError("pyserial is required to list available ports. Install with 'pip install pyserial'.")

@@ -4,6 +4,7 @@
     "baudrate": 115200,
     "timeout": 1.0,
     "terminator": "\r\n",
+    "return_on_init": "OK",
     "commands": {
         "initialize": "INIT",
         "start_streaming": "STREAM:ON",

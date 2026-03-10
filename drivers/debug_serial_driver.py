@@ -1,3 +1,5 @@
+from time import time
+
 import serial
 import serial.tools.list_ports
 from serial.serialutil import SerialException, SerialTimeoutException
@@ -10,52 +12,36 @@ from hardware_driver import HardwareDriver, HardwareProfile
 samples_parsed = 0
 parse_times = []
 
-class SerialDevice(serial.Serial, HardwareDriver):
-    def __init__(self, port=None, baudrate: int = 115200, timeout: float = 1, terminationCharacter: bytes = b'\n', profile: Optional[HardwareProfile] = None):
+class DebugSerialDriver(serial.Serial, HardwareDriver):
+    def __init__(self, profile: HardwareProfile):
         """
         Initialize the SerialDevice object.
-        
-        Args:
-            port: The serial port to connect to (e.g., 'COM3' or '/dev/ttyUSB0').
-            baudrate: The baud rate for the serial connection.
-            timeout: The timeout for the serial connection in seconds (float).
-            terminationCharacter: Line termination character.
-            profile: Optional HardwareProfile for driver interface compliance.
         """
         # Initialize serial.Serial parent
-        serial.Serial.__init__(self, port, baudrate, timeout=timeout)
+        serial.Serial.__init__(self)
+        #profile.port, profile.baudrate, timeout=profile.timeout, write_timeout=profile.timeout)
         
         # Initialize HardwareDriver parent if profile provided
-        if profile:
-            HardwareDriver.__init__(self, profile)
-            # Override with profile settings
-            self.baudrate = profile.baudrate
-            self.timeout = profile.timeout
-            self.terminationCharacter = profile.terminator.encode() if isinstance(profile.terminator, str) else profile.terminator
-        else:
-            # Create a minimal profile for backward compatibility
-            self.profile = None
-            self.terminationCharacter = terminationCharacter
+        HardwareDriver.__init__(self, profile)
+        # Override with profile settings
+        self.baudrate = profile.baudrate
+        self.timeout = profile.timeout
+        self.write_timeout = profile.timeout
+        self.terminationCharacter = profile.terminator.encode() if isinstance(profile.terminator, str) else profile.terminator
         
-        self.write_timeout = timeout
-        self.linereader = ReadLine(self)
-        self.linereader.setTerminationCharacter(self.terminationCharacter)
         self.inputbuffer = bytearray()
 
-   
-    def open_connection(self, port):
-        """
-        Open the serial connection if it is not already open.
-        """
-        # if port == " ":
-        #     return "Not a valid Port"
-        # if self.port == port and self.is_open:
-        #     return "Connection is already open."
-        try:
-            self.port = port
-            self.open()
-        except SerialException as e:
-            raise TimeoutError(f"Connection timeout: {e}")
+        # Diagnostics
+        self.byte_count = 0
+        self.line_count = 0
+        self.parse_success = 0
+        self.parse_failures = 0
+        self.diagnostic_start = time.perf_counter()
+
+        self._sps_last_rate = None
+        self._sps_window_start = time.perf_counter()
+        self._sps_window_count = 0
+        self._sps_update_period_s = 1.0
 
     def close_connection(self):
         """
@@ -81,6 +67,14 @@ class SerialDevice(serial.Serial, HardwareDriver):
         """
         self.baudrate = baudrate
 
+    def get_measured_sps(self):
+        return self._sps_last_rate  # float | None
+
+    def reset_sps_measurement(self):
+        self._sps_last_rate = None
+        self._sps_window_start = time.perf_counter()
+        self._sps_window_count = 0
+
     @staticmethod
     def list_devices():
         """
@@ -89,52 +83,81 @@ class SerialDevice(serial.Serial, HardwareDriver):
         """
         ports = serial.tools.list_ports.comports()
         return [(port.device, port.description) for port in ports]
-
-    def writeCommand(self, content, length=20):
-        """
-        Write a fixed-length string to the serial device.
-        :param content: The content to write.
-        :param length: The fixed length of the string.
-        """
-        if not self.is_open:
-            raise ConnectionError("Connection is not open.")
-        if len(content) > length:
-            raise ValueError("Content length exceeds the fixed length.")
-        padded_content = content.ljust(length)+ '\n' # Pad the content to the fixed length
-        self.write(padded_content.encode('utf-8'))
         
 
     def _readline(self, max_tries=1) -> bytearray:
-        """Reads a Line from the Serial bus, without a newline character.
-        reads a maximum of 4096 bytes at once.
-
-        Keyword Arguments:
-
-        terminationCharacter -- the character that defines the end of a line (default b'\n')
-
-        Returns a bytearray with the line
-        """
+        """Existing readline with byte counting"""
         nr_tries = 0
         while True:
-            # If buffer was filled before, check for new line
-            # check if the termination character is in the buffer
             idx = self.inputbuffer.find(self.terminationCharacter)
             if idx > 0:
-                #Return the number up to the termination character
                 ret = self.inputbuffer[:idx]
-                #delete all until this entry
                 del self.inputbuffer[:idx+1]
+                
+                # Count complete line
+                self.line_count += 1
+                self.byte_count += len(ret) + 1  # +1 for newline
+                
+                # Log every 100 lines
+                if self.line_count % 100 == 0:
+                    elapsed = time.perf_counter() - self.diagnostic_start
+                    print(f"Lines/sec: {self.line_count/elapsed:.1f} | Bytes/sec: {self.byte_count/elapsed:.0f} bytes")
+                
                 nr_tries = 0
                 return ret
-            # read a maximum of 4096 bytes at once
+            
+            # read bytes
             i = max(1, min(4096, self.in_waiting))
             data = self.read(i)
-            if (len(data) == 0):
+            self.byte_count += len(data)  # Count ALL bytes received
+            
+            if len(data) == 0:
                 nr_tries += 1
                 if nr_tries > max_tries:
                     raise TimeoutError("Timeout while reading from serial port")
                 continue
-            self.inputbuffer += data # add data to buffer
+            
+            self.inputbuffer += data
+
+    def read_sample(self) -> Optional[List[float]]:
+        """Parse with success/failure tracking"""
+        if not self.is_data_available():
+            return None
+        
+        try:
+            line = self.readLine().decode().strip()
+            
+            # Parse the "%lu,%f\n" format
+            parts = line.split(',')
+            if len(parts) != 2:
+                self.parse_failures += 1
+                return None
+            
+            value = float(parts[1])
+            self.parse_success += 1
+
+            self._sps_window_count += 1
+            now = time.perf_counter()
+            elapsed = now - self._sps_window_start
+            if elapsed >= self._sps_update_period_s:
+                self._sps_last_rate = self._sps_window_count / elapsed
+                self._sps_window_start = now
+                self._sps_window_count = 0
+            
+            # Log stats every 100 successful parses
+            if self.parse_success % 100 == 0:
+                total = self.parse_success + self.parse_failures
+                fail_rate = (self.parse_failures / total * 100) if total > 0 else 0
+                print(f"Parse success: {self.parse_success} | Failures: {self.parse_failures} ({fail_rate:.1f}%)")
+            
+            return [value]
+            
+        except (ValueError, IndexError):
+            self.parse_failures += 1
+            return None
+        except:
+            self.parse_failures += 1
+            return None
 
     def readLine(self, max_tries=1) -> bytearray:
         """
@@ -157,25 +180,6 @@ class SerialDevice(serial.Serial, HardwareDriver):
         self.reset_input_buffer()
         self.reset_output_buffer()
         self.inputbuffer = bytearray()  # Clear the input buffer
-
-    # def read_lines_permanently(self, callback):
-    #     """
-    #     Read lines from the serial port continuously and pass them to a callback function.
-    #     :param callback: A function to handle each line read from the serial port.
-    #     """
-    #     if not self.is_open:
-    #         raise ConnectionError("Connection is not open.")
-
-    #     def read_loop():
-    #         while self.is_open:
-    #             try:
-    #                 line = self.readLine().decode()
-    #                 callback(line)
-    #             except Exception as e:
-    #                 break
-
-    #     thread = threading.Thread(target=read_loop, daemon=True)
-    #     thread.start()
 
     def readBytes(self, length: int) -> bytearray:
         """Reads a number of bytes from the serial bus
@@ -220,56 +224,6 @@ class SerialDevice(serial.Serial, HardwareDriver):
         if self.is_open:
             self.close()
         self.is_connected = False
-    
-    def read_sample(self) -> Optional[List[float]]:
-        """
-        Read one line and parse CSV values (HardwareDriver interface).
-        
-        Reads a line from the serial device, splits it by the configured
-        separator, converts values to floats, and optionally applies scale factors.
-        
-        Returns:
-            List of float values, or None on error
-        """
-        if not self.is_data_available():
-            return None
-        
-        global samples_parsed, parse_times
-        start = time.perf_counter()
-        try:
-            line = self.readLine().decode().strip()
-            
-            # Get separator from profile (default to comma)
-            separator = ','
-            # scale_factors = []
-            # if self.profile and self.profile.data_format:
-            #     separator = self.profile.data_format.get('separator', ',')
-            #     scale_factors = self.profile.data_format.get('scale_factors', [])
-            
-            # Split and parse values
-            value_strings = line.split(separator)
-            data = [float(v.strip()) for v in value_strings if v.strip()]
-            
-            # Apply scale factors if configured
-            # if scale_factors:
-            #     data = [d * scale_factors[i] if i < len(scale_factors) else d for i, d in enumerate(data)]
-
-            elapsed = (time.perf_counter() - start) * 1000
-            parse_times.append(elapsed)
-            samples_parsed += 1
-            
-            if samples_parsed % 100 == 0:
-                avg_ms = sum(parse_times[-100:]) / 100
-                print(f"Parse time: {avg_ms:.3f}ms")
-            
-            return data
-            
-        except SerialTimeoutException:
-            raise TimeoutError(f"{self.profile.name}: Read timeout.")
-        except SerialException as e:
-            raise ConnectionError(f"{self.profile.name}: Serial error: {e}")
-        except:
-            raise
     
     def write_command(self, command: str) -> Optional[str]:
         """
@@ -424,8 +378,3 @@ class ReadLine:
     def stopReading(self, stop):
         """Defines if the readline function returns a value when reading a stream """
         self.stopped = stop
-
-if __name__ == "__main__":
-    # Example usage
-    device = SerialDevice()
-    device.list_devices()
