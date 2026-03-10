@@ -14,7 +14,7 @@ class SerialDevice(serial.Serial, HardwareDriver):
     def __init__(self, port=None, baudrate: int = 115200, timeout: float = 1,
                  terminationCharacter: bytes = b"\n",
                  profile: Optional[HardwareProfile] = None):
-        serial.Serial.__init__(self, port, baudrate, timeout=timeout)
+        serial.Serial.__init__(self, port, baudrate, timeout=timeout, write_timeout=timeout)
 
         if profile:
             HardwareDriver.__init__(self, profile)
@@ -30,8 +30,6 @@ class SerialDevice(serial.Serial, HardwareDriver):
             self.terminationCharacter = terminationCharacter
 
         self.write_timeout = timeout
-        self.linereader = ReadLine(self)
-        self.linereader.setTerminationCharacter(self.terminationCharacter)
         self.inputbuffer = bytearray()
 
     # ─── Legacy helpers ───────────────────────────────────────────────────
@@ -169,34 +167,3 @@ class SerialDevice(serial.Serial, HardwareDriver):
         if self.profile:
             info["profile_name"] = self.profile.name
         return info
-
-    def initialize(self) -> bool:
-        return True
-
-
-# ─── Readline helper ──────────────────────────────────────────────────────────
-
-class ReadLine:
-    """Buffered line reader for pyserial — faster than the built-in readline."""
-
-    def __init__(self, s: serial.Serial) -> None:
-        self.buf = bytearray()
-        self.s = s
-        self.terminationCharacter = b"\n"
-
-    def setSerialBus(self, s: serial.Serial) -> None:
-        self.s = s
-
-    def setTerminationCharacter(self, terminationCharacter: bytes) -> None:
-        self.terminationCharacter = terminationCharacter
-
-    def readline(self) -> Optional[bytearray]:
-        while True:
-            idx = self.buf.find(self.terminationCharacter)
-            if idx >= 0:
-                result = self.buf[:idx]
-                self.buf = self.buf[idx + 1:]
-                return result
-            chunk = self.s.read(max(1, min(4096, self.s.in_waiting)))
-            if chunk:
-                self.buf += chunk

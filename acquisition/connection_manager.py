@@ -138,17 +138,15 @@ class ConnectionManager(QObject):
         return bool(self.current_driver and self.current_driver.is_data_available())
 
     def read_sample(self):
+        """
+        Read one sample from the active driver.
+
+        Exceptions are intentionally propagated so the acquisition engine can
+        centralize recovery behavior and error signaling.
+        """
         if not self.current_driver:
             return None
-        try:
-            return self.current_driver.read_sample()
-        except TimeoutError as e:
-            self.error_handler.warning(str(e))
-        except ConnectionError as e:
-            self.error_handler.warning(str(e))
-        except Exception as e:
-            self.error_handler.warning(f"Error reading sample: {e}")
-        return None
+        return self.current_driver.read_sample()
 
     def flush(self) -> None:
         if self.current_driver:

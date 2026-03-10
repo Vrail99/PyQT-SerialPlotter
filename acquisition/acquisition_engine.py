@@ -74,9 +74,18 @@ class AcquisitionEngine(QObject):
             self.error_handler.error(msg)
             self.acquisitionError.emit(msg)
             self.connection_manager.disconnect()
+        except ConnectionError as e:
+            msg = f"DAQ: ConnectionError: {e}"
+            self.error_handler.error(msg)
+            self.acquisitionError.emit(msg)
+            self.connection_manager.disconnect()
         except TimeoutError as e:
             msg = f"DAQ: TimeoutError: {e}"
             self.error_handler.warning(msg)
+            self.acquisitionError.emit(msg)
+        except Exception as e:
+            msg = f"DAQ: Unexpected error: {e}"
+            self.error_handler.error(msg)
             self.acquisitionError.emit(msg)
 
         return samples_processed

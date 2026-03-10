@@ -20,6 +20,7 @@ class HardwareProfile:
     baudrate: int = 115200
     timeout: float = 1.0
     terminator: str = "\n"
+    return_on_init: Optional[str] = None
     commands: Dict[str, str] = field(default_factory=dict)
     data_format: Dict[str, Any] = field(default_factory=dict)
 
@@ -43,6 +44,16 @@ class HardwareDriver(ABC):
     @abstractmethod
     def connect(self, port: str) -> bool:
         """Connect to hardware on the given port. Returns True on success."""
+
+    def initialize(self) -> bool:
+        """Perform any necessary initialization after connecting, e.g. handshake."""
+        if self.profile.return_on_init is None:
+            return True
+        if self.profile.commands.get("initialize", '') != None:
+            response = self.write_command(self.profile.commands["initialize"])
+            if response != self.profile.return_on_init:
+                return False
+        return True
 
     @abstractmethod
     def disconnect(self) -> None:

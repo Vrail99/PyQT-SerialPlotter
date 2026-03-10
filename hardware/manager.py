@@ -57,6 +57,7 @@ class HardwareDriverManager:
             baudrate=data.get("baudrate", 115200),
             timeout=data.get("timeout", 1.0),
             terminator=data.get("terminator", "\n"),
+            return_on_init=data.get("return_on_init"),
             commands=data.get("commands", {}),
             data_format=data.get("data_format", {}),
         )
@@ -142,6 +143,7 @@ class HardwareDriverManager:
                         "baudrate": profile.baudrate,
                         "timeout": profile.timeout,
                         "terminator": profile.terminator,
+                        "return_on_init": profile.return_on_init,
                         "commands": profile.commands,
                         "data_format": profile.data_format,
                     },
