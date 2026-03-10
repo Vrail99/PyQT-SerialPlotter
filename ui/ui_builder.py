@@ -28,6 +28,7 @@ class UIBuilder(QObject):
     startStopToggled   = pyqtSignal()
     saveCsvRequested   = pyqtSignal()
     driverConfigRequested = pyqtSignal()
+    loadExternalWidgetRequested = pyqtSignal()
 
     def __init__(self, driver_manager, connection_manager, config, max_plot_length) -> None:
         super().__init__()
@@ -137,8 +138,12 @@ class UIBuilder(QObject):
         self.start_stop_button.clicked.connect(self.startStopToggled.emit)
         save_btn = QPushButton("Save to CSV")
         save_btn.clicked.connect(self.saveCsvRequested.emit)
+        load_widget_btn = QPushButton("Load Widget")
+        load_widget_btn.setToolTip("Load a QWidget plugin from user_widgets")
+        load_widget_btn.clicked.connect(self.loadExternalWidgetRequested.emit)
         layout.addWidget(self.start_stop_button)
         layout.addWidget(save_btn)
+        layout.addWidget(load_widget_btn)
         return layout
 
     # ─── Internal slots ───────────────────────────────────────────────────
