@@ -52,8 +52,8 @@ class PlotManager:
         self.frequency_datalines.clear()
 
         n = len(self.dataline_configs)
-        x = np.arange(buffer_size)
-        y = np.ones(buffer_size)
+        x = np.array([])
+        y = np.array([])
         hover_opts = dict(hoverable=True, hoverSymbol="+", hoverSize=10)
 
         for i, cfg in enumerate(self.dataline_configs):

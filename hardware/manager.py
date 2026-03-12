@@ -59,7 +59,8 @@ class HardwareDriverManager:
             terminator=data.get("terminator", "\n"),
             return_on_init=data.get("return_on_init"),
             commands=data.get("commands", {}),
-            data_format=data.get("data_format", {}),
+            output_data_format=data.get("output_data_format", {}),
+            input_data_format=data.get("input_data_format", {}),
         )
 
     def reload_profiles(self) -> None:
@@ -145,7 +146,7 @@ class HardwareDriverManager:
                         "terminator": profile.terminator,
                         "return_on_init": profile.return_on_init,
                         "commands": profile.commands,
-                        "data_format": profile.data_format,
+                        "output_data_format": profile.output_data_format,
                     },
                     f,
                     indent=4,

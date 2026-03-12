@@ -13,9 +13,15 @@
         "enable_continuous_mode": "ENABLE_OUTPUT 1",
         "disable_continuous_mode": "ENABLE_OUTPUT 0",
         "save_params": "SAVE_PARAMS",
-        "sync_params": "SYNC_PARAMS"
+        "sync_params": "SYNC_PARAMS",
+        "calibrate_zero": "CALIBRATE_ZERO"
     },
-    "data_format": {
+    "input_data_format": {
+        "separator": ",",
+        "unit": "Bar",
+        "scale_factor": 0.001
+    },
+    "output_data_format": {
         "type": "csv",
         "separator": ",",
         "scale_factors": []

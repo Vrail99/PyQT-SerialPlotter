@@ -56,7 +56,7 @@
                     "name": "y-Unit",
                     "Description": "Unit of the Y-axis",
                     "type": "str",
-                    "value": "mV"
+                    "value": "mBar"
                 },
                 {
                     "name": "Alpha-Filter-Value",

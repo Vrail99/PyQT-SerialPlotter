@@ -117,7 +117,7 @@ class SerialDevice(serial.Serial, HardwareDriver):
 
         try:
             line = self.readLine().decode().strip()
-            separator = ","
+            separator = self.profile.input_data_format.get("separator", ",")
             data = [float(v.strip()) for v in line.split(separator) if v.strip()]
 
             return data
@@ -138,11 +138,19 @@ class SerialDevice(serial.Serial, HardwareDriver):
             response = []
             response.append(self.readLine().decode().strip())
             while self.getInWaiting() > 0:
-                response.append(self.readLine().decode().strip())
+                d = self.readLine().decode().strip()
+                response.append(d)
+                print("Reading response")
+                if len(response) > 30:
+                    response.append("... (truncated)")
+                    break
             ret = "\n".join(response)
             return ret
         except SerialTimeoutException as e:
             raise TimeoutError(f"Write timeout: {e}")
+        except Exception:
+            print("Error reading response after writing command:")
+            raise
 
     def is_data_available(self) -> bool:
         return self.is_open and self.getInWaiting() > 0

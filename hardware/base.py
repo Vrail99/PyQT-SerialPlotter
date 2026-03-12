@@ -22,11 +22,14 @@ class HardwareProfile:
     terminator: str = "\n"
     return_on_init: Optional[str] = None
     commands: Dict[str, str] = field(default_factory=dict)
-    data_format: Dict[str, Any] = field(default_factory=dict)
+    output_data_format: Dict[str, Any] = field(default_factory=dict)
+    input_data_format: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if not self.data_format:
-            self.data_format = {"type": "csv", "separator": ",", "scale_factors": []}
+        if not self.output_data_format:
+            self.output_data_format = {"type": "csv", "separator": ",", "scale_factors": []}
+        if not self.input_data_format:
+            self.input_data_format = {"type": "csv", "separator": ",", "scale_factors": []}
 
 
 class HardwareDriver(ABC):

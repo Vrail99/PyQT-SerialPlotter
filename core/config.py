@@ -69,6 +69,12 @@ class ApplicationConfig:
             print(f"Error loading {dataline_file}: {e}")
             datalines = []
 
+        if "input_scale" in dataline_data:
+            plot_params.y_scaling = dataline_data["input_scale"]
+
+        if "input_unit" in dataline_data:
+            plot_params.y_unit = dataline_data["input_unit"]
+
         return cls(plot=plot_params, export=export_params, datalines=datalines)
 
     @staticmethod

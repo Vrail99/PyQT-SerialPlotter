@@ -18,7 +18,7 @@ class DataBufferManager:
         self.num_channels = num_channels
         self.buffer_size = buffer_size
         self.x_data: List[np.ndarray] = [np.arange(buffer_size) for _ in range(num_channels)]
-        self.y_data: List[np.ndarray] = [np.ones(buffer_size) for _ in range(num_channels)]
+        self.y_data: List[np.ndarray] = [np.full(buffer_size, np.nan) for _ in range(num_channels)]
         self._oldest_index: List[int] = [0 for _ in range(num_channels)]
 
     def _ordered_channel_data(self, channel: int) -> np.ndarray:
@@ -66,7 +66,7 @@ class DataBufferManager:
     def clear(self) -> None:
         for i in range(self.num_channels):
             self.x_data[i] = np.arange(self.buffer_size)
-            self.y_data[i] = np.ones(self.buffer_size)
+            self.y_data[i] = np.full(self.buffer_size, np.nan)
             self._oldest_index[i] = 0
 
     def get_buffer_size(self) -> int:
