@@ -1,0 +1,23 @@
+{
+    "name": "X_INCH_D_MV Driver",
+    "driver": "GenericSerialDriver",
+    "baudrate": 921600,
+    "timeout": 1.0,
+    "terminator": "\n",
+    "commands": {
+        "read_pressure": "READ_PRESSURE",
+        "read_pressure_average": "READ_PRESSURE_AVG",
+        "read_raw": "READ_RAW",
+        "read_raw_average": "READ_RAW_AVG",
+        "scan_bus": "SCAN_BUS",
+        "enable_continuous_mode": "ENABLE_OUTPUT 1",
+        "disable_continuous_mode": "ENABLE_OUTPUT 0",
+        "save_params": "SAVE_PARAMS",
+        "sync_params": "SYNC_PARAMS"
+    },
+    "data_format": {
+        "type": "csv",
+        "separator": ",",
+        "scale_factors": []
+    }
+}

@@ -68,7 +68,7 @@ class SerialDevice(serial.Serial, HardwareDriver):
         nr_tries = 0
         while True:
             idx = self.inputbuffer.find(self.terminationCharacter)
-            if idx > 0:
+            if idx >= 0:
                 ret = self.inputbuffer[:idx]
                 del self.inputbuffer[:idx + 1]
                 nr_tries = 0
@@ -132,9 +132,15 @@ class SerialDevice(serial.Serial, HardwareDriver):
         if not self.is_open:
             raise ConnectionError("Connection is not open.")
         terminator = self.profile.terminator if self.profile else "\n"
+        print(f"Writing command: {command} with terminator: {repr(terminator)}")
         self.write((command + terminator).encode("utf-8"))
         try:
-            return self.readLine().decode().strip()
+            response = []
+            response.append(self.readLine().decode().strip())
+            while self.getInWaiting() > 0:
+                response.append(self.readLine().decode().strip())
+            ret = "\n".join(response)
+            return ret
         except SerialTimeoutException as e:
             raise TimeoutError(f"Write timeout: {e}")
 

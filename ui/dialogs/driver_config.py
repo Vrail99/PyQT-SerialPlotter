@@ -16,6 +16,7 @@ class DriverConfigDialog(QDialog):
         super().__init__(parent)
         self.driver_manager = driver_manager
         self.current_driver = driver_manager.get_current_driver()
+        self.setModal(False)
 
         self.setWindowTitle("Hardware Driver Configuration")
         self.setMinimumWidth(600)
@@ -181,11 +182,11 @@ class DriverConfigDialog(QDialog):
             QMessageBox.warning(self, "Error", f"Failed to send command: {e}")
 
     def _log_command(self, text: str) -> None:
-        self.history_text.append(f"<b style='color: blue;'>→ {text}</b>")
+        self.history_text.append(f"<b style='color: green;'>→ {text}</b>")
         self._scroll_history()
 
     def _log_response(self, text: str) -> None:
-        self.history_text.append(f"<span style='color: green;'>← {text}</span>")
+        self.history_text.append(f"{text}")
         self._scroll_history()
 
     def _log_error(self, text: str) -> None:

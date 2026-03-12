@@ -80,6 +80,8 @@ class SerialPlotter(QWidget):
         widgets_dir.mkdir(parents=True, exist_ok=True)
         self.widget_loader = WidgetModuleLoader(widgets_dir)
 
+        self.driver_config_dialog = None
+
         # UI & parameters
         param_tree = ParameterTree()
         self.ui = UIBuilder(self.driver_manager, self.connection_manager, self.config, self.max_plot_length)
@@ -110,7 +112,7 @@ class SerialPlotter(QWidget):
         self.ui.clearPlotsRequested.connect(self._clear_plots)
         self.ui.startStopToggled.connect(self.toggle_acquisition)
         self.ui.saveCsvRequested.connect(self.save_to_csv)
-        self.ui.driverConfigRequested.connect(lambda: DriverConfigDialog(self.driver_manager, self).exec())
+        self.ui.driverConfigRequested.connect(self._open_driver_config)
         self.ui.loadExternalWidgetRequested.connect(self._open_widget_loader)
 
         # ConnectionManager -> UI status
@@ -124,6 +126,19 @@ class SerialPlotter(QWidget):
         self.acquisition_engine.sampleRateUpdated.connect(self.param_manager.update_fs)
 
     # --- Connection handlers -------------------------------------------------
+    
+    @pyqtSlot()
+    def _open_driver_config(self) -> None:
+        if self.driver_config_dialog is None:
+            self.driver_config_dialog = DriverConfigDialog(self.driver_manager, self)
+
+        # Keep info in sync if profile/connection changed since last open
+        self.driver_config_dialog.refresh()
+
+        # Show as non-modal so main window stays interactive
+        self.driver_config_dialog.show()
+        self.driver_config_dialog.raise_()
+        self.driver_config_dialog.activateWindow()
 
     def _on_port_selected(self, port: str) -> None:
         self.connection_manager.disconnect()

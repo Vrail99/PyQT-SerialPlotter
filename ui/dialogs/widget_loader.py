@@ -32,11 +32,16 @@ class WidgetModuleLoader:
         if not self.widgets_dir.exists():
             return []
 
-        modules = [
-            ".".join(path.relative_to(self.widgets_dir).with_suffix("").parts)
-            for path in self.widgets_dir.rglob("*.py")
-            if path.name != "__init__.py" and not path.name.startswith("_")
-        ]
+        modules = []
+        for path in self.widgets_dir.rglob("*.py"):
+            if path.name == "__init__.py" or path.name.startswith("_"):
+                continue
+            module_name = ".".join(path.relative_to(self.widgets_dir).with_suffix("").parts)
+            try:
+                if self.discover_widget_classes(module_name):
+                    modules.append(module_name)
+            except Exception:
+                pass
         return sorted(modules)
 
     def discover_widget_classes(self, module_name: str) -> List[str]:
