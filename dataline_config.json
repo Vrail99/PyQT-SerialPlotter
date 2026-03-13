@@ -24,6 +24,11 @@
             "name": "Ventil2",
             "index": 4,
             "visible": true
+        },
+        {
+            "name": "Derived Output",
+            "index": 5,
+            "visible": true
         }
     ]
 }

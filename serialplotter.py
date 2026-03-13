@@ -75,6 +75,7 @@ class SerialPlotter(QWidget):
         self.is_acquiring = False
         self.state = AcquisitionState.DISCONNECTED
         self.external_widgets = []
+        self.raw_channel_count = 0
 
         widgets_dir = Path(__file__).resolve().parent / "user_widgets"
         widgets_dir.mkdir(parents=True, exist_ok=True)
@@ -193,6 +194,10 @@ class SerialPlotter(QWidget):
             if mean_requested is not None and hasattr(mean_requested, "connect"):
                 mean_requested.connect(self._provide_channel_mean)
 
+            derived_sample_ready = getattr(widget, "derivedSampleReady", None)
+            if derived_sample_ready is not None and hasattr(derived_sample_ready, "connect"):
+                derived_sample_ready.connect(self._on_widget_derived_sample)
+
             widget.show()
             self.external_widgets.append(widget)
         except Exception as e:
@@ -227,6 +232,20 @@ class SerialPlotter(QWidget):
         for widget in self.external_widgets:
             if hasattr(widget, "setChannelMean"):
                 widget.setChannelMean(channel, mean_value)
+
+    @pyqtSlot(int, float)
+    def _on_widget_derived_sample(self, channel: int, value: float) -> None:
+        if not (0 <= channel < len(self.config.datalines)):
+            self.error_handler.warning(f"Invalid derived channel index: {channel}")
+            return
+
+        if self.raw_channel_count and channel < self.raw_channel_count:
+            self.error_handler.warning(
+                f"Rejected widget output for raw hardware channel {channel}"
+            )
+            return
+
+        self.data_buffer.append_sample(channel, value, self.config.plot.alpha_filter_value)
 
     # --- Acquisition control -------------------------------------------------
 
@@ -292,8 +311,17 @@ class SerialPlotter(QWidget):
     def _on_sample_received(self, timestamp: float, values: list) -> None:
         if self.file_stream_manager.is_active():
             self.file_stream_manager.write_sample(timestamp, values)
-        for ch, value in enumerate(values[:len(self.config.datalines)]):
+
+        raw_values = values[:len(self.config.datalines)]
+        self.raw_channel_count = len(raw_values)
+
+        for ch, value in enumerate(raw_values):
             self.data_buffer.append_sample(ch, value, self.config.plot.alpha_filter_value)
+
+        for widget in self.external_widgets:
+            process_sample = getattr(widget, "processSample", None)
+            if callable(process_sample):
+                process_sample(timestamp, raw_values)
 
     def _on_plot_length_changed(self, new_length: int) -> None:
         self.max_plot_length = new_length
@@ -304,8 +332,7 @@ class SerialPlotter(QWidget):
 
     def _clear_plots(self) -> None:
         self.data_buffer.clear()
-        self.plot_manager.clear_plots()
-        self.plot_manager.initialize_datalines(self.max_plot_length)
+        self.plot_manager.clear_plot_data()
 
     # --- CSV export ----------------------------------------------------------
 
@@ -337,6 +364,24 @@ class SerialPlotter(QWidget):
     def closeEvent(self, event) -> None:
         if self.is_acquiring:
             self._stop_acquisition()
+
+        if self.driver_config_dialog is not None:
+            try:
+                self.driver_config_dialog.close()
+            except Exception:
+                pass
+            self.driver_config_dialog = None
+
+        for widget in list(self.external_widgets):
+            try:
+                widget.close()
+            except Exception:
+                pass
+        self.external_widgets.clear()
+
+        self.file_stream_manager.close()
+        self.connection_manager.disconnect()
+        event.accept()
         self.file_stream_manager.close()
         self.connection_manager.disconnect()
         event.accept()
@@ -344,9 +389,9 @@ class SerialPlotter(QWidget):
 
 def main():
     app = QApplication(sys.argv)
-    window = QWidget()
-    layout = QVBoxLayout(window)
-    layout.addWidget(SerialPlotter())
+    window = SerialPlotter()#QWidget()
+    #layout = QVBoxLayout(window)
+    #layout.addWidget(SerialPlotter())
     window.setWindowTitle("Serial Plotter")
     window.resize(1280, 1024)
     window.show()

@@ -15,6 +15,7 @@ class MeanWidget(QWidget):
     """Simple plugin that requests mean value for a selected channel."""
 
     meanRequested = pyqtSignal(int)
+    derivedSampleReady = pyqtSignal(int, float)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -26,6 +27,7 @@ class MeanWidget(QWidget):
 
         self.channel_label = QLabel("Channel", self)
         self.value_label = QLabel("Mean: --", self)
+        self.output_channel = 0
 
         request_btn = QPushButton("Request Mean", self)
         request_btn.clicked.connect(self._request_mean)
@@ -40,8 +42,16 @@ class MeanWidget(QWidget):
         layout.addWidget(self.value_label)
 
     def setAvailableChannels(self, channel_names: list[str]) -> None:
-        max_index = max(0, len(channel_names) - 1)
+        max_index = max(0, len(channel_names) - 2)
         self.channel_spin.setMaximum(max_index)
+        self.output_channel = len(channel_names) - 1 if channel_names else 0
+
+    def processSample(self, timestamp: float, values: list[float]) -> None:
+        if not values:
+            return
+
+        channel = min(self.channel_spin.value(), len(values) - 1)
+        self.derivedSampleReady.emit(self.output_channel, float(values[channel]))
 
     @pyqtSlot()
     def _request_mean(self) -> None:

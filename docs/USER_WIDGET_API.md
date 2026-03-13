@@ -41,6 +41,19 @@ That is enough to be loadable and shown.
 - Emit with channel index when your widget wants the current mean value.
 - Connected automatically to `SerialPlotter`.
 
+### Optional method: `processSample(timestamp: float, values: list[float])`
+
+- Called for each acquired sample after the raw hardware values have been written into
+    the application's normal data buffer.
+- Use this to derive calculated values from the live sample stream.
+
+### Optional signal: `derivedSampleReady(int, float)`
+
+- Emit with `(channel_index, value)` when your widget produces a derived scalar.
+- `channel_index` must point to a reserved derived channel declared in
+    `dataline_config.json`.
+- Connected automatically to `SerialPlotter`.
+
 ### Optional callback methods for mean response
 
 When a mean request is handled, `SerialPlotter` calls one of these on the requester:
@@ -50,6 +63,9 @@ When a mean request is handled, `SerialPlotter` calls one of these on the reques
 
 If neither is available on the requester, `SerialPlotter` falls back to broadcasting
 `setChannelMean(channel, value)` to loaded widgets that implement it.
+
+The existing mean request flow remains unchanged when using the optional sample
+processing hooks above.
 
 ## Minimal Template
 
@@ -71,6 +87,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel
 
 class MyMeanWidget(QWidget):
     meanRequested = pyqtSignal(int)
+    derivedSampleReady = pyqtSignal(int, float)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -85,6 +102,10 @@ class MyMeanWidget(QWidget):
     def setAvailableChannels(self, channel_names: list[str]) -> None:
         # Optional: configure your channel selectors here
         pass
+
+    def processSample(self, timestamp: float, values: list[float]) -> None:
+        if values:
+            self.derivedSampleReady.emit(len(values), values[0])
 
     @pyqtSlot(float)
     def setMeanValue(self, value: float) -> None:
