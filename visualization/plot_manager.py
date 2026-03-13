@@ -129,5 +129,12 @@ class PlotManager:
         self.live_plot.clear()
         self.frequency_plot.clear()
 
+    def clear_plot_data(self) -> None:
+        empty = np.array([])
+        for line in self.datalines:
+            line.setData(empty, empty)
+        for line in self.frequency_datalines:
+            line.setData(empty, empty)
+
     def get_visible_channels(self) -> List[int]:
         return [i for i, line in enumerate(self.datalines) if line.isVisible()]
