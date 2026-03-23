@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 import math
 import sys
 from pathlib import Path
+import csv
 
 from PySide6.QtCore import QTimer, Signal as pyqtSignal, Slot as pyqtSlot
 from PySide6.QtWidgets import (
@@ -45,6 +47,7 @@ def _clone_mix(mix: GasMixture) -> GasMixture:
 class DensityWidget(QWidget):
     meanRequested = pyqtSignal(int)
     derivedSampleReady = pyqtSignal(int, float)
+    written_once = False
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -227,10 +230,27 @@ class DensityWidget(QWidget):
             if system is None:
                 return
             k_factor = system.calibrate(delta_p=dp_pa, V_dot=flow)
+            result = system.measure(delta_p=dp_pa, V_dot=flow)
             self.k_factor_label.setText(f"K-Factor: {k_factor:.8f}")
             self.status_label.setText("Status: calibrated")
+            self.save_info_to_file(system, result, dp_pa, flow)
         except Exception as exc:
             self.status_label.setText(f"Status: calibration error ({exc})")
+
+    def save_info_to_file(self, system, result, deltaP, flow) -> None:
+        output_dict = {
+            "Flow (m3/s)": flow,
+            "Delta P (Pa)": deltaP,
+            "K-Factor": system.K_factor,
+            **asdict(result)
+        }
+        with open("result_info.csv", mode="a+", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=output_dict.keys())
+            if (self.written_once):
+                print("WrittenHeader")
+                writer.writeheader()
+                self.written_once = True
+            writer.writerow(output_dict)
 
     @pyqtSlot()
     def _toggle_publish_mode(self) -> None:
