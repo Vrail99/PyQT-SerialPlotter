@@ -32,6 +32,7 @@ from DensityCalculators import (  # noqa: E402
     GasMixture,
     GasComponent,
     ConcentricOrifice,
+    RectangularSlitOrifice,
     GasMeasurementSystem,
 )
 
@@ -104,7 +105,7 @@ class DensityWidget(QWidget):
         self.flow_spin.setRange(0.0, 100000.0)
         self.flow_spin.setDecimals(3)
         self.flow_spin.setValue(0.0)
-        self.flow_spin.setSuffix(" L/min")
+        self.flow_spin.setSuffix(" NL/min")
 
         self.dp_channel_spin = QSpinBox(self)
         self.dp_channel_spin.setMinimum(0)
@@ -130,7 +131,7 @@ class DensityWidget(QWidget):
         form.addRow(self.geom_b_label, self.geom_b_spin)
         form.addRow("Temperature", self.temp_spin)
         form.addRow("Inlet Pressure", self.pressure_spin)
-        form.addRow("Volumetric Flow", self.flow_spin)
+        form.addRow("Volumetric Flow (Normal)", self.flow_spin)
         form.addRow("dP Source Channel", self.dp_channel_spin)
         form.addRow("Output Channel", self.output_channel_spin)
 
@@ -140,6 +141,7 @@ class DensityWidget(QWidget):
         self.status_label = QLabel("Status: idle", self)
         self.dp_mean_label = QLabel("dP mean: -- mbar", self)
         self.density_label = QLabel("Density: -- kg/m^3", self)
+        self.std_density_label = QLabel("Standard Density: -- kg/m^3", self)
         self.mass_flow_label = QLabel("Mass Flow: -- g/s", self)
         self.molar_mass_label = QLabel("Molar Mass: -- g/mol", self)
         self.output_mean_label = QLabel("Output mean: -- kg/m^3", self)
@@ -149,6 +151,7 @@ class DensityWidget(QWidget):
         out_layout.addWidget(self.status_label)
         out_layout.addWidget(self.dp_mean_label)
         out_layout.addWidget(self.density_label)
+        out_layout.addWidget(self.std_density_label)
         out_layout.addWidget(self.mass_flow_label)
         out_layout.addWidget(self.molar_mass_label)
         out_layout.addWidget(self.output_mean_label)
@@ -292,9 +295,15 @@ class DensityWidget(QWidget):
 
             result = system.measure(delta_p=dp_pa, V_dot=flow)
             rho = float(result.density)
+            std_rho = system.calc_standard_density(
+                rho_current=rho,
+                T_current=self.temp_spin.value() + 273.15,
+                p_current=self.pressure_spin.value() * 100.0,
+            )
             m_dot_g_s = rho * flow * 1000.0
 
             self.density_label.setText(f"Density: {rho:.6f} kg/m^3")
+            self.std_density_label.setText(f"Standard Density: {std_rho:.6f} kg/m^3")
             self.mass_flow_label.setText(f"Mass Flow: {m_dot_g_s:.6f} g/s")
             self.molar_mass_label.setText(f"Molar Mass: {result.molar_mass:.6f} g/mol")
             self.status_label.setText(f"Status: {source} update")
@@ -324,7 +333,29 @@ class DensityWidget(QWidget):
         return self._gas_factories[idx][1]()
 
     def _flow_m3_s(self) -> float:
-        return self.flow_spin.value() / 60000.0
+        flow_normal_l_min = self.flow_spin.value()
+        flow_operating_l_min = self._normal_l_min_to_operating_l_min(
+            flow_normal_l_min,
+            self.temp_spin.value() + 273.15,
+            self.pressure_spin.value() * 100.0,
+        )
+        return flow_operating_l_min / 60000.0
+
+    @staticmethod
+    def _normal_l_min_to_operating_l_min(
+        flow_normal_l_min: float,
+        temp_k: float,
+        pressure_pa_abs: float,
+    ) -> float:
+        """Convert normal flow (0 C, 101325 Pa) to operating flow."""
+        if flow_normal_l_min < 0.0:
+            raise ValueError("flow_normal_l_min must be >= 0")
+        if temp_k <= 0.0 or pressure_pa_abs <= 0.0:
+            raise ValueError("temp_k and pressure_pa_abs must be > 0")
+
+        t_normal_k = 273.15
+        p_normal_pa = 101325.0
+        return flow_normal_l_min * (p_normal_pa / pressure_pa_abs) * (temp_k / t_normal_k)
 
     @staticmethod
     def _is_valid_positive(value: float) -> bool:
