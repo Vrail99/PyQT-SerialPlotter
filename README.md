@@ -31,6 +31,39 @@ Pyqt-SerialPlotter is a Python application for real-time plotting of serial data
 3. Select the serial port and configure settings.
 4. Start plotting!
 
+## Binary Gas Widget (AIR -> N2 Workflow)
+
+The `DensityWidget` in `user_widgets/density_calculator_widget.py` can be used to detect composition changes from AIR to N2 using density-based inversion.
+
+### What it does
+
+- Calibrates an orifice-based gas model at current process conditions.
+- Uses measured dP and configured flow to estimate density in real time.
+- In dedicated AIR/N2 mode, reports:
+    - AIR Fraction [%]
+    - N2 Fraction [%]
+
+### Setup and run
+
+1. Load the external widget from the `user_widgets` directory.
+2. Set gas pair to `AIR` and `N2` (order does not matter).
+3. Configure geometry, manual temperature, manual inlet pressure, and normal flow.
+4. Select the dP source channel.
+5. Set `Reference Heavy Fraction` to match the calibration state:
+     - If Light=`AIR`, Heavy=`N2`: enter N2 percent during calibration.
+     - If Light=`N2`, Heavy=`AIR`: enter AIR percent during calibration.
+6. With a known baseline stream (for example 100% AIR), click `Calibrate`.
+7. Click `Start Live Analysis`.
+8. Introduce N2 and monitor `AIR Fraction` and `N2 Fraction` labels.
+
+### Practical notes
+
+- For a pure AIR calibration baseline:
+    - Light=`AIR`, Heavy=`N2` -> set `Reference Heavy Fraction` to `0%`.
+    - Light=`N2`, Heavy=`AIR` -> set `Reference Heavy Fraction` to `100%`.
+- Results are displayed in widget labels only; they are not published back as derived SerialPlotter channels.
+- Keep temperature and pressure inputs aligned with actual process conditions for best accuracy.
+
 ## Requirements
 
 - Python 3.7+
