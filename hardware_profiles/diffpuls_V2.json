@@ -1,0 +1,18 @@
+{
+    "name": "Diffpuls Board V2",
+    "driver": "GenericSerialDriver",
+    "baudrate": 921600,
+    "timeout": 1.0,
+    "terminator": "\n",
+    "commands": {
+        "Start Meas": "w 1 128",
+        "Stop Meas": "w 1 0",
+        "Start Stream": "s",
+        "Stop Stream": "s"
+    },
+    "data_format": {
+        "type": "csv",
+        "separator": ",",
+        "scale_factors": []
+    }
+}
