@@ -140,9 +140,9 @@ class DensityWidget(QWidget):
         self.geom_b_label = QLabel("Pipe diameter D", self)
 
         form = QFormLayout()
-        form.addRow("Light Gas", self.light_gas_combo)
-        form.addRow("Heavy Gas", self.heavy_gas_combo)
-        form.addRow("Reference Heavy Fraction", self.ref_heavy_fraction_spin)
+        form.addRow("Gas 1", self.light_gas_combo)
+        form.addRow("Gas 2", self.heavy_gas_combo)
+        form.addRow("Gas 2 Fraction", self.ref_heavy_fraction_spin)
         form.addRow("Orifice type", self.orifice_combo)
         form.addRow(self.geom_a_label, self.geom_a_spin)
         form.addRow(self.geom_b_label, self.geom_b_spin)
@@ -161,8 +161,8 @@ class DensityWidget(QWidget):
         self.std_density_label = QLabel("Standard Density: -- kg/m^3", self)
         self.mass_flow_label = QLabel("Mass Flow: -- g/s", self)
         self.molar_mass_label = QLabel("Molar Mass: -- g/mol", self)
-        self.light_fraction_label = QLabel("Light Fraction: -- %", self)
-        self.heavy_fraction_label = QLabel("Heavy Fraction: -- %", self)
+        self.light_fraction_label = QLabel(f"{self.light_gas_combo.currentText()} Fraction: -- %", self)
+        self.heavy_fraction_label = QLabel(f"{self.heavy_gas_combo.currentText()} Fraction: -- %", self)
         self.iterations_label = QLabel("Composition Iterations: --", self)
         self.k_factor_label = QLabel("K-Factor: --", self)
 
@@ -392,14 +392,30 @@ class DensityWidget(QWidget):
                 self.temp_spin.value() + 273.15,
                 self.pressure_spin.value() * 100.0,
             )
-            self.light_fraction_label.setText(f"AIR Fraction: {100.0 * x_air:.3f} %")
-            self.heavy_fraction_label.setText(f"N2 Fraction: {100.0 * x_n2:.3f} %")
+            selected_light = self.light_gas_combo.currentText().strip()
+            selected_heavy = self.heavy_gas_combo.currentText().strip()
+
+            if selected_light == "AIR" and selected_heavy == "N2":
+                x_selected_light = x_air
+                x_selected_heavy = x_n2
+            elif selected_light == "N2" and selected_heavy == "AIR":
+                x_selected_light = x_n2
+                x_selected_heavy = x_air
+            else:
+                x_by_name = {"AIR": x_air, "N2": x_n2}
+                x_selected_light = x_by_name.get(selected_light, 0.0)
+                x_selected_heavy = x_by_name.get(selected_heavy, 0.0)
+
+            self.light_fraction_label.setText(f"{selected_light} Fraction: {100.0 * x_selected_light:.3f} %")
+            self.heavy_fraction_label.setText(f"{selected_heavy} Fraction: {100.0 * x_selected_heavy:.3f} %")
             self.iterations_label.setText("Composition Iterations: AIR/N2 inversion")
             return
 
         if not result.composition or self._system is None or not self._system.gas.is_binary:
-            self.light_fraction_label.setText("Light Fraction: -- %")
-            self.heavy_fraction_label.setText("Heavy Fraction: -- %")
+            selected_light = self.light_gas_combo.currentText().strip()
+            selected_heavy = self.heavy_gas_combo.currentText().strip()
+            self.light_fraction_label.setText(f"{selected_light} Fraction: -- %")
+            self.heavy_fraction_label.setText(f"{selected_heavy} Fraction: -- %")
             self.iterations_label.setText("Composition Iterations: 0")
             return
 
@@ -408,8 +424,8 @@ class DensityWidget(QWidget):
         x_light = float(result.composition.get(light_name, 0.0))
         x_heavy = float(result.composition.get(heavy_name, 0.0))
 
-        self.light_fraction_label.setText(f"Light Fraction ({light_name}): {100.0 * x_light:.3f} %")
-        self.heavy_fraction_label.setText(f"Heavy Fraction ({heavy_name}): {100.0 * x_heavy:.3f} %")
+        self.light_fraction_label.setText(f"{light_name} Fraction: {100.0 * x_light:.3f} %")
+        self.heavy_fraction_label.setText(f"{heavy_name} Fraction: {100.0 * x_heavy:.3f} %")
         self.iterations_label.setText(f"Composition Iterations: {result.composition_iterations}")
 
     def _build_system(self) -> GasMeasurementSystem:

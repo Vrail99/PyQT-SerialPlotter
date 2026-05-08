@@ -50,13 +50,13 @@
                     "name": "y-Scaling",
                     "Description": "Scaling factor for the plot",
                     "type": "float",
-                    "value": 1.0
+                    "value": 0.001
                 },
                 {
                     "name": "y-Unit",
                     "Description": "Unit of the Y-axis",
                     "type": "str",
-                    "value": "mBar"
+                    "value": "Bar"
                 },
                 {
                     "name": "Alpha-Filter-Value",

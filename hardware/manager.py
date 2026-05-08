@@ -61,6 +61,7 @@ class HardwareDriverManager:
             commands=data.get("commands", {}),
             output_data_format=data.get("output_data_format", {}),
             input_data_format=data.get("input_data_format", {}),
+            datalines=data.get("datalines", []),
         )
 
     def reload_profiles(self) -> None:
@@ -147,6 +148,8 @@ class HardwareDriverManager:
                         "return_on_init": profile.return_on_init,
                         "commands": profile.commands,
                         "output_data_format": profile.output_data_format,
+                        "input_data_format": profile.input_data_format,
+                        "datalines": profile.datalines,
                     },
                     f,
                     indent=4,

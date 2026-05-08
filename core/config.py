@@ -49,8 +49,7 @@ class ApplicationConfig:
     datalines: List[DatalineConfig] = field(default_factory=list)
 
     @classmethod
-    def from_json_files(cls, param_file: str = "parameter_config.json",
-                        dataline_file: str = "dataline_config.json") -> "ApplicationConfig":
+    def from_json_files(cls, param_file: str = "parameter_config.json") -> "ApplicationConfig":
         try:
             with open(param_file) as f:
                 param_data = json.load(f)
@@ -61,19 +60,8 @@ class ApplicationConfig:
             plot_params = PlotConfig()
             export_params = ExportConfig()
 
-        try:
-            with open(dataline_file) as f:
-                dataline_data = json.load(f)
-            datalines = cls._extract_datalines(dataline_data)
-        except Exception as e:
-            print(f"Error loading {dataline_file}: {e}")
-            datalines = []
-
-        if "input_scale" in dataline_data:
-            plot_params.y_scaling = dataline_data["input_scale"]
-
-        if "input_unit" in dataline_data:
-            plot_params.y_unit = dataline_data["input_unit"]
+        # datalines will be dynamically loaded from the selected hardware profile
+        datalines = []
 
         return cls(plot=plot_params, export=export_params, datalines=datalines)
 

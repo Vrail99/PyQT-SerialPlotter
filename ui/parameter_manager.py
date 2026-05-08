@@ -107,6 +107,26 @@ class ParameterManager(QObject):
 
     # ─── Live update API ──────────────────────────────────────────────────
 
+    def update_datalines(self) -> None:
+        """Update the Statistics group when datalines change."""
+        stats_group = self.params.child("Statistics")
+        stats_group.clearChildren()
+        stats_params = [
+            {
+                "name": cfg.name,
+                "type": "group",
+                "children": [
+                    {"name": "Min",   "type": "float", "value": float("inf"),  "readonly": True},
+                    {"name": "Max",   "type": "float", "value": float("-inf"), "readonly": True},
+                    {"name": "Mean",  "type": "float", "value": 0.0, "readonly": True, "decimals": 4},
+                    {"name": "Std",   "type": "float", "value": 0.0, "readonly": True, "decimals": 4},
+                    {"name": "Slope", "type": "float", "value": 0.0, "readonly": True, "decimals": 1},
+                ],
+            }
+            for cfg in self.config.datalines
+        ]
+        stats_group.addChildren(stats_params)
+
     def update_statistics(self, stats_list) -> None:
         stats_group = self.params.child("Statistics")
         for i, stats in enumerate(stats_list):

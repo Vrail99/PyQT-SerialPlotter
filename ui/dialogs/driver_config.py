@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QPushButton, QTextEdit, QGridLayout, QMessageBox, QLineEdit,
 )
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QIntValidator
 
 
 class DriverConfigDialog(QDialog):
@@ -30,7 +31,8 @@ class DriverConfigDialog(QDialog):
     def _setup_ui(self) -> None:
         layout = QVBoxLayout()
         layout.addWidget(self._create_device_info_group())
-        layout.addWidget(self._create_quick_commands_group())
+        self.quick_commands_group = self._create_quick_commands_group()
+        layout.addWidget(self.quick_commands_group)
         layout.addWidget(self._create_custom_command_group())
         layout.addWidget(self._create_command_history_group())
 
@@ -67,21 +69,35 @@ class DriverConfigDialog(QDialog):
         group = QGroupBox("Quick Commands")
         layout = QGridLayout()
         self.command_buttons = {}
+        self.command_inputs = {}
 
         if self.current_driver and self.current_driver.profile.commands:
-            row = col = 0
-            for cmd_name, cmd_string in self.current_driver.profile.commands.items():
+            row = 0
+            for cmd_name, cmd_spec in self.current_driver.profile.commands.items():
                 btn = QPushButton(cmd_name.replace("_", " ").title())
-                btn.setToolTip(f"Send: {cmd_string}")
-                btn.clicked.connect(
-                    lambda checked, n=cmd_name, c=cmd_string: self._send_quick_command(n, c)
-                )
-                layout.addWidget(btn, row, col)
+                btn.setToolTip(f"Send: {self._command_preview(cmd_spec)}")
+                btn.clicked.connect(lambda checked, n=cmd_name, c=cmd_spec: self._send_quick_command(n, c))
+
+                if self._requires_user_value(cmd_spec):
+                    input_field = QLineEdit()
+                    input_field.setPlaceholderText(self._command_placeholder(cmd_spec))
+                    default_value = self._command_default_value(cmd_spec)
+                    if default_value:
+                        input_field.setText(default_value)
+                    if self._command_input_type(cmd_spec) == "int":
+                        input_field.setValidator(QIntValidator())
+                    input_field.returnPressed.connect(
+                        lambda n=cmd_name, c=cmd_spec: self._send_quick_command(n, c)
+                    )
+
+                    layout.addWidget(btn, row, 0)
+                    layout.addWidget(input_field, row, 1, 1, 2)
+                    self.command_inputs[cmd_name] = input_field
+                else:
+                    layout.addWidget(btn, row, 0, 1, 3)
+
                 self.command_buttons[cmd_name] = btn
-                col += 1
-                if col >= 3:
-                    col = 0
-                    row += 1
+                row += 1
         else:
             lbl = QLabel("No commands defined in profile")
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -147,23 +163,110 @@ class DriverConfigDialog(QDialog):
 
         for btn in self.command_buttons.values():
             btn.setEnabled(connected)
+        for field in self.command_inputs.values():
+            field.setEnabled(connected)
 
     def refresh(self) -> None:
+        self._rebuild_quick_commands_group()
         self._update_device_info()
+
+    def _rebuild_quick_commands_group(self) -> None:
+        """Recreate quick command controls to match the active profile."""
+        parent_layout = self.layout()
+        if not isinstance(parent_layout, QVBoxLayout):
+            return
+
+        new_group = self._create_quick_commands_group()
+        index = parent_layout.indexOf(self.quick_commands_group)
+
+        if index >= 0:
+            parent_layout.insertWidget(index, new_group)
+            parent_layout.removeWidget(self.quick_commands_group)
+        else:
+            parent_layout.addWidget(new_group)
+
+        self.quick_commands_group.setParent(None)
+        self.quick_commands_group.deleteLater()
+        self.quick_commands_group = new_group
 
     # ─── Command helpers ──────────────────────────────────────────────────
 
-    def _send_quick_command(self, cmd_name: str, cmd_string: str) -> None:
+    def _send_quick_command(self, cmd_name: str, cmd_spec) -> None:
         if not self.current_driver or not self.current_driver.is_connected:
             QMessageBox.warning(self, "Error", "Device not connected")
             return
+
+        command = self._build_command(cmd_name, cmd_spec)
+        if not command:
+            return
+
         try:
-            self._log_command(f"{cmd_name}: {cmd_string}")
-            response = self.current_driver.write_command(cmd_string)
+            self._log_command(f"{cmd_name}: {command}")
+            response = self.current_driver.write_command(command)
             self._log_response(response or "(No response)")
         except Exception as e:
             self._log_error(str(e))
             QMessageBox.warning(self, "Error", f"Failed to send command: {e}")
+
+    def _build_command(self, cmd_name: str, cmd_spec) -> str:
+        if isinstance(cmd_spec, str):
+            return cmd_spec
+        if not isinstance(cmd_spec, dict):
+            QMessageBox.warning(self, "Error", f"Invalid command definition for '{cmd_name}'")
+            return ""
+
+        command = cmd_spec.get("command")
+        if command is not None:
+            return str(command)
+
+        template = str(cmd_spec.get("template", "")).strip()
+        if not template:
+            QMessageBox.warning(self, "Error", f"No command template for '{cmd_name}'")
+            return ""
+
+        if "{value}" not in template:
+            return template
+
+        input_field = self.command_inputs.get(cmd_name)
+        value = input_field.text().strip() if input_field else ""
+        if not value:
+            QMessageBox.warning(self, "Missing value", f"Please enter a value for '{cmd_name}'")
+            return ""
+
+        return template.replace("{value}", value)
+
+    @staticmethod
+    def _requires_user_value(cmd_spec) -> bool:
+        return isinstance(cmd_spec, dict) and "{value}" in str(cmd_spec.get("template", ""))
+
+    @staticmethod
+    def _command_input_type(cmd_spec) -> str:
+        if isinstance(cmd_spec, dict):
+            return str(cmd_spec.get("input", "text")).strip().lower()
+        return "text"
+
+    @staticmethod
+    def _command_preview(cmd_spec) -> str:
+        if isinstance(cmd_spec, str):
+            return cmd_spec
+        if isinstance(cmd_spec, dict):
+            if "command" in cmd_spec:
+                return str(cmd_spec["command"])
+            if "template" in cmd_spec:
+                return str(cmd_spec["template"])
+        return "<invalid command>"
+
+    @staticmethod
+    def _command_placeholder(cmd_spec) -> str:
+        if isinstance(cmd_spec, dict):
+            return str(cmd_spec.get("placeholder", "value"))
+        return "value"
+
+    @staticmethod
+    def _command_default_value(cmd_spec) -> str:
+        if isinstance(cmd_spec, dict) and "default" in cmd_spec:
+            return str(cmd_spec["default"])
+        return ""
 
     def _send_custom_command(self) -> None:
         if not self.current_driver or not self.current_driver.is_connected:

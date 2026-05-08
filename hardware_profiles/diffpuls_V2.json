@@ -5,14 +5,77 @@
     "timeout": 1.0,
     "terminator": "\n",
     "commands": {
-        "Start Meas": "w 1 128",
-        "Stop Meas": "w 1 0",
+        "Start Meas": "wi 1 128",
+        "Stop Meas": "wi 1 0",
         "Start Stream": "s",
-        "Stop Stream": "s"
+        "Stop Stream": "s",
+        "Start Bump": "wi 1 64",
+        "PMax": {
+            "template": "wi 5 {value}",
+            "input": "int",
+            "placeholder": "PMax",
+            "default": "250"
+        },
+        "Kp": {
+            "template": "wf 13 {value}",
+            "input": "float",
+            "placeholder": "Deflation value",
+            "default": 0.015
+        },
+        "Ki": {
+            "template": "wf 14 {value}",
+            "input": "float",
+            "placeholder": "Deflation value",
+            "default": 0.035
+        },
+        "AlphaP": {
+            "template": "wf 21 {value}",
+            "input": "float",
+            "placeholder": "Deflation value",
+            "default": 0.3
+        },
+        "AlphaR": {
+            "template": "wf 22 {value}",
+            "input": "float",
+            "placeholder": "Deflation value",
+            "default": 0.5
+        }
     },
     "data_format": {
         "type": "csv",
         "separator": ",",
         "scale_factors": []
-    }
+    },
+    "datalines": [
+        {
+            "name": "HighSense",
+            "index": 0,
+            "visible": true
+        },
+        {
+            "name": "DiffSense",
+            "index": 1,
+            "visible": true
+        },
+        {
+            "name": "LowSense",
+            "index": 2,
+            "visible": true
+        },
+        {
+            "name": "Ventil1",
+            "index": 3,
+            "visible": true
+        },
+        {
+            "name": "Ventil2",
+            "index": 4,
+            "visible": true
+        },
+        {
+            "name": "Derived Output",
+            "index": 5,
+            "visible": true
+        }
+    ]
 }

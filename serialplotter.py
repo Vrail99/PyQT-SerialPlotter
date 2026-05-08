@@ -120,6 +120,7 @@ class SerialPlotter(QWidget):
         self.connection_manager.connectionEstablished.connect(self._on_connected)
         self.connection_manager.connectionLost.connect(self._on_disconnected)
         self.connection_manager.portListUpdated.connect(self.ui.update_ports)
+        self.connection_manager.profileChanged.connect(self._on_profile_changed)
         self.connection_manager.profileBaudrateChanged.connect(self.ui.set_baudrate_display)
 
         # Acquisition engine -> data handlers
@@ -128,6 +129,48 @@ class SerialPlotter(QWidget):
 
     # --- Connection handlers -------------------------------------------------
     
+    def _on_profile_changed(self, profile_name: str) -> None:
+        profile = self.driver_manager.get_profile(profile_name)
+        if not profile:
+            return
+
+        # Stop acquisition if running
+        if self.is_acquiring:
+            self._stop_acquisition()
+
+        # Update datalines from hardware profile
+        dataline_data = {"datalines": profile.datalines}
+        self.config.datalines = ApplicationConfig._extract_datalines(dataline_data)
+        
+        # update y_unit and y_scaling if present in profile
+        if "scale" in profile.input_data_format:
+             self.config.plot.y_scaling = profile.input_data_format["scale"]
+        if "unit" in profile.input_data_format:
+             self.config.plot.y_unit = profile.input_data_format["unit"]
+
+        num_channels = len(self.config.datalines)
+        
+        # Re-initialize Data layer
+        self.data_buffer = DataBufferManager(num_channels, self.max_plot_length)
+        self.statistics_calc = StatisticsCalculator(num_channels)
+        self.acquisition_engine.num_channels = num_channels
+        self.param_manager.data_buffer = self.data_buffer
+        self.param_manager.update_datalines()
+
+        # Re-initialize Plot
+        self.plot_manager.clear_plots()
+        self.plot_manager.dataline_configs = self.config.datalines
+        self.plot_manager.initialize_datalines(self.max_plot_length)
+        self.plot_manager.set_axis_scale('left', self.config.plot.y_scaling, 'both')
+        self.plot_manager.set_axis_label('left', 'Amplitude', self.config.plot.y_unit, 'both')
+
+        # Notify widgets
+        channel_names = [cfg.name for cfg in self.config.datalines]
+        for widget in self.external_widgets:
+            set_channels = getattr(widget, "setAvailableChannels", None)
+            if callable(set_channels):
+                set_channels(channel_names)
+
     @pyqtSlot()
     def _open_driver_config(self) -> None:
         if self.driver_config_dialog is None:
