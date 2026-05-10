@@ -7,14 +7,29 @@
     "commands": {
         "read_pressure": "READ_PRESSURE",
         "read_pressure_average": "READ_PRESSURE_AVG",
-        "read_raw": "READ_RAW",
-        "read_raw_average": "READ_RAW_AVG",
-        "scan_bus": "SCAN_BUS",
         "enable_continuous_mode": "ENABLE_OUTPUT 1",
         "disable_continuous_mode": "ENABLE_OUTPUT 0",
         "save_params": "SAVE_PARAMS",
-        "sync_params": "SYNC_PARAMS",
-        "calibrate_zero": "CALIBRATE_ZERO"
+        "get_params": "SYNC_PARAMS",
+        "calibrate_zero": "CALIBRATE_ZERO",
+        "CAL P_Slope":{
+            "template": "CALIBRATE_SLOPE {value}",
+            "input": "float",
+            "placeholder": "P_FS (mbar)",
+            "default": "10.0"
+        },
+        "Averages": {
+            "template": "SET_NR_AVERAGES {value}",
+            "input": "int",
+            "placeholder": "Averages",
+            "default": "50"
+        },
+        "Filter":{
+            "template": "SET_FILTER {value}",
+            "input": "int",
+            "placeholder": "Filter",
+            "default": "0"
+        }
     },
     "input_data_format": {
         "separator": ",",
