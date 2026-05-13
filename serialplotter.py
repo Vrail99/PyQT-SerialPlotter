@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QFileDialog
+from PySide6.QtWidgets import QApplication, QWidget, QFileDialog
 from PySide6.QtCore import QTimer, Slot as pyqtSlot, Signal as pyqtSignal
 from pyqtgraph.parametertree import ParameterTree
 
@@ -422,9 +422,6 @@ class SerialPlotter(QWidget):
                 pass
         self.external_widgets.clear()
 
-        self.file_stream_manager.close()
-        self.connection_manager.disconnect()
-        event.accept()
         self.file_stream_manager.close()
         self.connection_manager.disconnect()
         event.accept()
